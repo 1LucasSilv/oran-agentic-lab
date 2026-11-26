@@ -16,6 +16,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest==9.2.0"]
+mcp = ["mcp==2.3.0"]
 
 [project.scripts]
 oran-eda = "oran_lab.eda:main"

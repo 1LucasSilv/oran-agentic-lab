@@ -211,7 +211,42 @@ class AgentSession:
             return "orcamento_esgotado"
         return None
 
-    def decide(self, detection, simulator, baseline):
+    def _infer(self, schema, system, context, audit):
+        config = self.config
+        options = {k: getattr(config, k) for k in ("temperature", "num_ctx", "num_predict")}
+        if config.seed is not None:
+            options["seed"] = config.seed
+        payload = {"model": config.model, "stream": False, "format": schema, "options": options,
+                   "messages": [{"role": "system", "content": system},
+                                {"role": "user", "content": json.dumps(context, ensure_ascii=False)}]}
+        self.calls += 1
+        call_start = perf_counter()
+        try:
+            status, raw = self.client.request("/api/chat", payload)
+        finally:
+            audit["tempo_chamada_s"] = perf_counter() - call_start
+        audit.update(status_http=status, resposta_http=raw)
+        if status != 200:
+            raise ValueError(f"Ollama HTTP {status}")
+        response = strict_json(raw)
+        if not isinstance(response, dict):
+            raise ValueError("Envelope Ollama inválido")
+        audit["metricas_ollama"] = {k: response.get(k) for k in (
+            "model", "eval_count", "prompt_eval_count", "prompt_eval_cached_count", "eval_duration", "prompt_eval_duration",
+            "total_duration", "load_duration", "done_reason")}
+        message = response.get("message")
+        if (response.get("done") is not True or response.get("done_reason") not in (None, "stop")
+                or not isinstance(message, dict) or message.get("role") != "assistant"
+                or message.get("tool_calls") or type(message.get("content")) is not str):
+            raise ValueError("Resposta incompleta ou incompatível com /api/chat")
+        return message["content"]
+
+    def _consult_model(self, schema, prompt, context, audit):
+        record = {"contexto": context, "resposta_http": None}
+        audit.setdefault("inferencias_consulta", []).append(record)
+        return self._infer(schema, prompt, context, record)
+
+    def decide(self, detection, simulator, baseline, mcp=None):
         start = perf_counter()
         config = self.config
         window_id = detection["janela"]["id"]
@@ -219,48 +254,34 @@ class AgentSession:
         audit = {"janela_id": window_id, "dispensa": skip, "contexto": None, "resposta_http": None,
                  "proposta_modelo": None, "historico_modelo": None, "erro": None, "fallback": None,
                  "tempo_chamada_s": None, "metricas_ollama": None}
+        if mcp:
+            audit["mcp"] = mcp.audit
         origin = "politica_deterministica"
         entry = None
         if not skip:
             context = build_context(detection, simulator.state(), simulator.limits)
             audit["contexto"] = context
-            options = {k: getattr(config, k) for k in ("temperature", "num_ctx", "num_predict")}
-            if config.seed is not None:
-                options["seed"] = config.seed
-            payload = {"model": config.model, "stream": False, "format": SCHEMA, "options": options,
-                       "messages": [{"role": "system", "content": SYSTEM_PROMPT},
-                                    {"role": "user", "content": json.dumps(context, ensure_ascii=False)}]}
-            self.calls += 1
-            call_start = perf_counter()
             try:
-                try:
-                    status, raw = self.client.request("/api/chat", payload)
-                finally:
-                    audit["tempo_chamada_s"] = perf_counter() - call_start
-                audit.update(status_http=status, resposta_http=raw)
-                if status != 200:
-                    raise ValueError(f"Ollama HTTP {status}")
-                response = strict_json(raw)
-                if not isinstance(response, dict):
-                    raise ValueError("Envelope Ollama inválido")
-                audit["metricas_ollama"] = {k: response.get(k) for k in (
-                    "model", "eval_count", "prompt_eval_count", "prompt_eval_cached_count", "eval_duration", "prompt_eval_duration",
-                    "total_duration", "load_duration", "done_reason")}
-                message = response.get("message")
-                if (response.get("done") is not True or response.get("done_reason") not in (None, "stop")
-                        or not isinstance(message, dict) or message.get("role") != "assistant"
-                        or message.get("tool_calls") or type(message.get("content")) is not str):
-                    raise ValueError("Resposta incompleta ou incompatível com /api/chat")
-                proposal = parse_proposal(message["content"])
+                if mcp:
+                    audit["contexto_final"] = mcp.consult(
+                        lambda schema, prompt, query: self._consult_model(schema, prompt, query, audit),
+                        context, config.max_calls - self.calls,
+                    )
+                proposal = parse_proposal(self._infer(SCHEMA, SYSTEM_PROMPT, audit.get("contexto_final", context), audit))
                 audit["proposta_modelo"] = proposal
             except (OSError, HTTPException, ValueError, RecursionError) as error:
                 audit["erro"] = f"{type(error).__name__}: {error}"
             else:
-                entry = simulator.apply(proposal, origin="ollama", window_id=window_id)
-                audit["historico_modelo"] = entry["id"]
-                if entry["validacao"]["estado"] == "recusada" or entry["execucao"]["estado"] == "falha":
-                    audit["erro"] = entry["execucao"]["justificativa"]
-                    entry = None
+                try:
+                    entry = (mcp.apply(proposal, "ollama") if mcp
+                             else simulator.apply(proposal, origin="ollama", window_id=window_id))
+                except ValueError as error:
+                    audit["erro"] = str(error)
+                if entry is not None:
+                    audit["historico_modelo"] = entry["id"]
+                    if entry["validacao"]["estado"] == "recusada" or entry["execucao"]["estado"] == "falha":
+                        audit["erro"] = entry["execucao"]["justificativa"]
+                        entry = None
             if audit["erro"]:
                 self.consecutive += 1
                 self.failures += 1
@@ -271,16 +292,25 @@ class AgentSession:
             if audit["erro"] or skip == "circuito_aberto":
                 origin = "fallback_python"
                 audit["fallback"] = proposal
-            entry = simulator.apply(proposal, origin=origin, window_id=window_id)
+            try:
+                entry = (mcp.apply(proposal, origin) if mcp
+                         else simulator.apply(proposal, origin=origin, window_id=window_id))
+            except ValueError as error:
+                audit["erro"] = audit["erro"] or str(error)
+                proposal = {"acao": NO_ACTION, "parametros": {}, "justificativa": "Canal de ação MCP indisponível"}
+                audit["fallback"] = proposal
+                entry = simulator.apply(proposal, origin="fallback_python", window_id=window_id)
         audit.update(historico_final=entry["id"], origem_decisao_final=entry["origem"],
                      origem_execucao=entry["origem"] if entry["execucao"]["estado"] == "executada" else None,
                      tempo_decisao_s=perf_counter() - start)
         self.decisions.append(audit)
 
     def report(self):
+        calls = [call for decision in self.decisions
+                 for call in [*decision.get("inferencias_consulta", []), decision]]
         totals = {}
         for key in ("eval_count", "prompt_eval_count", "eval_duration", "prompt_eval_duration"):
-            values = [(d["metricas_ollama"] or {}).get(key) for d in self.decisions]
+            values = [(d["metricas_ollama"] or {}).get(key) for d in calls]
             observed = [value for value in values if type(value) is int and value >= 0]
             totals[key] = sum(observed) if observed else None
         return {"config": asdict(self.config), "metadados": self.metadata, "residencia_final": self.client.residency(),
@@ -290,5 +320,5 @@ class AgentSession:
                 "propostas_modelo_aceitas_verificadas": sum(d["origem_decisao_final"] == "ollama" for d in self.decisions),
                 "acoes_executadas_modelo": sum(d["origem_execucao"] == "ollama" for d in self.decisions),
                 "totais_ollama_informados": totals,
-                "tempo_chamadas_s": sum(d["tempo_chamada_s"] or 0 for d in self.decisions),
+                "tempo_chamadas_s": sum(d["tempo_chamada_s"] or 0 for d in calls),
                 "tempo_decisoes_s": sum(d["tempo_decisao_s"] for d in self.decisions), "decisoes": self.decisions}

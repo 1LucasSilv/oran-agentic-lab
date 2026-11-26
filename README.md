@@ -84,3 +84,15 @@ oran-loop "$arquivo" --modo ollama --selecao todas --max-chamadas 2
 ```
 
 O modo explícito grava os resultados em `results/etapa4/<modo>/<origem>/`. O simulador recebe uma decisão final por janela. No modo Ollama, o JSON também identifica tentativas recusadas, a resposta bruta e a política que assumiu cada fallback. O comando sem `--modo` continua disponível para a demonstração da Etapa 3. [Instalação, configuração, protocolo e resultados do agente](docs/AGENTE_OLLAMA.md)
+
+## Usar ferramentas MCP locais
+
+```bash
+python -m pip install -e '.[test,mcp]'
+python -m oran_lab.mcp_client
+oran-loop --sintetico --modo ollama --mcp --max-chamadas 6
+pytest -q
+ORAN_TEST_MCP_STDIO=1 pytest -q tests/test_mcp.py
+```
+
+O primeiro comando de demonstração usa um subprocesso MCP por stdio. O loop com Ollama usa conexão MCP em memória e aceita `--consultas-mcp` e `--timeout-mcp`. Os artefatos ficam em `results/etapa5/`. [Ferramentas, limites e auditoria](docs/MCP.md)

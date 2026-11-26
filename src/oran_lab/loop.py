@@ -5,6 +5,8 @@ import json
 from collections import Counter
 from dataclasses import asdict
 from hashlib import sha256
+from importlib.metadata import version
+from math import isfinite
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from zipfile import BadZipFile
@@ -65,7 +67,8 @@ def _controlled_actions(simulator: Simulator):
 
 def run_loop(frame: pd.DataFrame, source: dict, replay_config: ReplayConfig = ReplayConfig(),
              detector_config: DetectorConfig = DetectorConfig(), limits: Limits = Limits(),
-             *, controlled: bool = False, agent_config: AgentConfig | None = None, client=None) -> dict:
+             *, controlled: bool = False, agent_config: AgentConfig | None = None, client=None,
+             mcp_reads: int | None = None, mcp_timeout: float = 5) -> dict:
     """Executa o detector, aplica a política e devolve a trilha e o estado serializáveis."""
     detections = list(detect(frame, replay_config, detector_config))
     simulator = Simulator(frame, detections, replay_config.advance, limits)
@@ -73,9 +76,18 @@ def run_loop(frame: pd.DataFrame, source: dict, replay_config: ReplayConfig = Re
     if controlled and agent_config:
         raise ValueError("A demonstração controlada requer a política Python")
     agent = AgentSession(agent_config, client) if agent_config else None
+    if mcp_reads is not None:
+        if not agent or type(mcp_reads) is not int or not 0 <= mcp_reads <= 4:
+            raise ValueError("MCP requer agente e de 0 a 4 consultas por janela")
+        if not isfinite(mcp_timeout) or mcp_timeout <= 0:
+            raise ValueError("Timeout MCP deve ser positivo e finito")
+        from .mcp_client import MCPWindow
+        catalog = {d["janela"]["id"]: d for d in detections}
     for detection in detections:
         if agent:
-            agent.decide(detection, simulator, propose)
+            window = (MCPWindow(simulator, frame, catalog, detection["janela"]["id"], mcp_reads, mcp_timeout)
+                      if mcp_reads is not None else None)
+            agent.decide(detection, simulator, propose, window)
         else:
             simulator.apply(propose(detection), window_id=detection["janela"]["id"],
                             origin="politica_deterministica")
@@ -83,6 +95,8 @@ def run_loop(frame: pd.DataFrame, source: dict, replay_config: ReplayConfig = Re
         _controlled_actions(simulator)
     return {
         **({"agente": agent.report()} if agent else {}),
+        **({"mcp": {"transporte": "memoria", "sdk": version("mcp"), "consultas_por_janela": mcp_reads,
+                    "timeout_s": mcp_timeout}} if mcp_reads is not None else {}),
         "versao_formato": 1,
         "fonte": source,
         "linhas": len(frame),
@@ -132,6 +146,13 @@ def _report(result: dict) -> str:
                   f"Falhas: {agent['falhas']}. Decisões de fallback: {agent['fallbacks']}.",
                   "As contagens de propostas acima incluem todos os validadores acionados. "
                   "Cada decisão no JSON identifica a origem e as entradas correspondentes no histórico.", ""]
+    if "mcp" in result:
+        calls = [call for item in result["agente"]["decisoes"] for call in item["mcp"]["ferramentas"]]
+        reads = [item for item in calls if item["nome"] not in (None, "solicitar_acao")]
+        lines += ["## Ferramentas MCP", "",
+                  f"SDK `{result['mcp']['sdk']}`, transporte em memória. "
+                  f"{len(reads)} consultas solicitadas pelo modelo, "
+                  f"{sum('resultado' in item for item in reads)} concluídas.", ""]
     highlighted = [item for item in history if item["validacao"]["estado"] == "recusada"
                    or item["execucao"]["estado"] != "nao_executada"]
     if highlighted:
@@ -183,6 +204,9 @@ def main(argv=None):
     parser.add_argument("--max-chamadas", type=int, default=AgentConfig.max_calls)
     parser.add_argument("--falhas-consecutivas", type=int, default=AgentConfig.max_failures)
     parser.add_argument("--selecao", choices=("suspeitas", "todas"), default=AgentConfig.selection)
+    parser.add_argument("--mcp", action="store_true", help="Usa ferramentas MCP locais no modo Ollama")
+    parser.add_argument("--consultas-mcp", type=int, default=2)
+    parser.add_argument("--timeout-mcp", type=float, default=5)
     args = parser.parse_args(argv)
     if (args.excel is not None) == args.sintetico:
         parser.error("Informe o Excel ou use --sintetico")
@@ -210,8 +234,10 @@ def main(argv=None):
                                        num_predict=args.geracao, max_calls=args.max_chamadas,
                                        max_failures=args.falhas_consecutivas, selection=args.selecao)
         result = run_loop(frame, source, config, controlled=args.sintetico and args.modo is None,
-                          agent_config=agent_config)
-        folder = Path("results/etapa4") / args.modo if args.modo else Path("results/etapa3")
+                          agent_config=agent_config, mcp_reads=args.consultas_mcp if args.mcp else None,
+                          mcp_timeout=args.timeout_mcp)
+        folder = (Path("results/etapa5/ollama-mcp") if args.mcp else
+                  Path("results/etapa4") / args.modo if args.modo else Path("results/etapa3"))
         report = write_results(result, args.saida or folder / subdir)
     except (ValueError, OSError, BadZipFile) as error:
         parser.exit(2, f"Erro: {error}\n")

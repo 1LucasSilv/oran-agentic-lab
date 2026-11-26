@@ -80,7 +80,7 @@ class Simulator:
         with self._lock:
             return deepcopy(self._history)
 
-    def validate(self, proposal: dict, window_id: int | None = None) -> Validation:
+    def validate(self, proposal: dict, window_id: int | None = None, *, scoped: bool = False) -> Validation:
         """Valida uma proposta JSON contra a detecção e o estado operacional atual."""
         if not isinstance(proposal, dict) or set(proposal) != {"acao", "parametros", "justificativa"}:
             return Validation("A proposta deve conter ação, parâmetros e justificativa")
@@ -104,6 +104,9 @@ class Simulator:
         event = self._state["eventos"].get(event_id)
         if event is None:
             return Validation("Evento inexistente")
+        if scoped and (self._detections.get(window_id, {}).get("alerta_id") != event_id
+                       or event["janela_id"] > window_id):
+            return Validation("Evento fora do contexto da janela autorizada")
         if action == PRIORITIZE:
             priority = parameters["prioridade"]
             if priority not in PRIORITIES:
@@ -270,7 +273,7 @@ class Simulator:
             proposal = None
             validation = Validation("Proposta deve ser serializável como JSON")
         else:
-            validation = self.validate(proposal, window_id)
+            validation = self.validate(proposal, window_id, scoped=origin in ("ollama", "cliente_mcp"))
         before = self.state()
         execution = {"estado": "nao_executada", "justificativa": validation.reason}
         verification = {"estado": "nao_aplicavel", "justificativa": "Proposta recusada"}
