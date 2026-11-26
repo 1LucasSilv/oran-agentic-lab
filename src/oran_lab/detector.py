@@ -60,7 +60,8 @@ class MetricStats:
     mediana: float | None
 
 
-def _summarize(series: pd.Series, coverage: float) -> MetricStats:
+def summarize_metric(series: pd.Series, coverage: float) -> MetricStats:
+    """Resume valores KPM não negativos com a cobertura solicitada."""
     present = series.dropna()
     values = [float(value) for value in present
               if isinstance(value, Real) and not isinstance(value, bool)
@@ -109,7 +110,7 @@ def _detect_segment(windows, config: DetectorConfig):
         previous_end = end
 
         stats = {
-            metric: _summarize(series, config.min_coverage)
+            metric: summarize_metric(series, config.min_coverage)
             for metric, series in window.records.reindex(columns=METRICS).items()
         }
         medians = {metric: stat.mediana for metric, stat in stats.items()}

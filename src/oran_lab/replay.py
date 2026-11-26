@@ -51,7 +51,8 @@ def load_kpm(path: Path, sheet: str = KPM) -> tuple[str, pd.DataFrame]:
     return digest, sheets[sheet]
 
 
-def _registers(frame: pd.DataFrame) -> list[int]:
+def validated_registers(frame: pd.DataFrame) -> list[int]:
+    """Retorna os identificadores na ordem de origem após verificar a sequência."""
     if len(frame) == 0:
         return []
     if "Register" not in frame.columns:
@@ -73,7 +74,7 @@ def _registers(frame: pd.DataFrame) -> list[int]:
 
 def replay(frame: pd.DataFrame, config: ReplayConfig = ReplayConfig()) -> Iterator[Window]:
     """Emite janelas na ordem original, sem atravessar lacunas de Register."""
-    registers = _registers(frame)
+    registers = validated_registers(frame)
     boundaries = [0]
     boundaries.extend(i for i in range(1, len(registers)) if registers[i] != registers[i - 1] + 1)
     boundaries.append(len(registers))
