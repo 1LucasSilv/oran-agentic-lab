@@ -1,6 +1,6 @@
 # oran-agentic-lab
 
-Laboratório de análise de KPMs históricos de uma rede experimental Open RAN. As etapas 0 e 1 entregam um ambiente Python e o comando `oran-eda` para auditar planilhas Excel. A inspeção da planilha oficial, incluindo as unidades disponíveis e os limites do alinhamento com o tráfego, está no [relatório da Etapa 1](docs/EDA.md). O [plano técnico](docs/PLANO_LABORATORIO.md) descreve as etapas seguintes.
+Laboratório de análise de KPMs históricos de uma rede experimental Open RAN. Use `oran-eda` para auditar a planilha e `oran-replay` para reproduzir os registros em janelas e aplicar o detector de referência. [Auditoria do Excel oficial](docs/EDA.md) · [Replay e detecção](docs/REPLAY_DETECCAO.md) · [Plano técnico](docs/PLANO_LABORATORIO.md)
 
 ## Preparar o ambiente
 
@@ -42,3 +42,18 @@ O leitor usa a primeira linha de cada tabela como cabeçalho. Mantém colunas co
 O hash identifica a revisão oficial que recebeu interpretação específica. Para outros arquivos, o programa reconhece colunas de datas Excel e usa a posição da linha nos gráficos. Use `--tempo ABA COLUNA MODO` para indicar outra coluna ou substituir o modo. Use `data` para datas Excel ou texto ISO 8601, `segundos` para um contador em segundos e `bruto` para inspecionar diferenças numéricas em unidade desconhecida. É possível repetir `--aba` e `--tempo`. No modo `data`, instantes com fuso são convertidos para UTC e valores sem fuso são tratados como UTC para o cálculo.
 
 Os intervalos usam pares adjacentes na ordem da planilha. Uma lacuna interrompe o cálculo naquele par. Repetições e recuos permanecem visíveis. Para comparar execuções de arquivos ou seleções diferentes, escolha um diretório de saída para cada uma.
+
+## Reproduzir janelas e aplicar o detector
+
+Com o ambiente instalado e a planilha em `data/raw/`, execute na raiz do projeto.
+
+```bash
+arquivo='data/raw/20250321_11.17.57_KPM_vs_iper3_1000ms_05_weeks(2).xlsx'
+oran-replay "$arquivo"
+oran-replay "$arquivo" --tamanho 30 --avanco 15 --somente-replay
+oran-replay --help
+```
+
+O primeiro comando grava `resultados.json` e `relatorio.md` em `results/etapa2/`. O segundo grava o inventário das janelas sobrepostas em `results/replay/`. Use `--saida` para guardar outra configuração, `--aba` para escolher o nome exato da aba e `--descartar-incompletas` para omitir as janelas parciais.
+
+Tamanho e avanço são contados em registros de `Register`. Por padrão, o detector compara a mediana do throughput UL com uma referência de três janelas históricas independentes e exige queda de pelo menos 30% em duas janelas independentes de uma mesma sequência. A cobertura mínima é de 80%. O PRB UL ajuda a contextualizar a queda em relação à sua própria referência. [Parâmetros, decisões e resultado da execução oficial](docs/REPLAY_DETECCAO.md)

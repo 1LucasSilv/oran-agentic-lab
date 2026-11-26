@@ -1,7 +1,7 @@
 # Plano de desenvolvimento — Laboratório de IA Agêntica para Redes 5G Open RAN
 
 **Identificador do projeto:** `oran-agentic-lab`  
-**Estado:** especificação inicial, anterior à implementação  
+**Estado:** Etapas 0 a 2 implementadas\
 **Abordagem:** protótipo pequeno, incremental, funcional e reproduzível  
 **Ambiente de trabalho:** Linux, Python, VS Code + Codex e GitHub
 
@@ -65,7 +65,7 @@ OAI-KPM-dataset (.xlsx)
 [Leitor + validação + armazenamento local]
          │
          ▼
-[Reprodutor de registros / janelas temporais]
+[Reprodutor de janelas por Register]
          │
          ▼
 [Detector de referência — regras/estatística]
@@ -235,4 +235,4 @@ Ao terminar uma etapa, entregar:
 - [Ollama — documentação](https://docs.ollama.com/)
 - Notebook de referência (arquivo local fornecido): `lab_TSpec.ipynb`
 
-> **Próxima ação:** criar a estrutura da Etapa 0 e executar a Etapa 1 com o Excel real do repositório, documentando as verificações das abas, colunas, unidades e linha temporal.
+Os detalhes implementados e a execução de referência da Etapa 2 estão no [relatório de replay e detecção](REPLAY_DETECCAO.md). A próxima etapa prevista é o ciclo de ação simulada.

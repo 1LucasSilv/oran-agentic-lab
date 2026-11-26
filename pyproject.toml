@@ -19,6 +19,7 @@ test = ["pytest==9.2.0"]
 
 [project.scripts]
 oran-eda = "oran_lab.eda:main"
+oran-replay = "oran_lab.detector:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
