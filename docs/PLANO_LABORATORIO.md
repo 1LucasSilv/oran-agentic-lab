@@ -1,7 +1,7 @@
 # Plano de desenvolvimento — Laboratório de IA Agêntica para Redes 5G Open RAN
 
 **Identificador do projeto:** `oran-agentic-lab`  
-**Estado:** Etapas 0 a 3 implementadas\
+**Estado:** Etapas 0 a 4 implementadas\
 **Abordagem:** protótipo pequeno, incremental, funcional e reproduzível  
 **Ambiente de trabalho:** Linux, Python, VS Code + Codex e GitHub
 
@@ -235,4 +235,4 @@ Ao terminar uma etapa, entregar:
 - [Ollama — documentação](https://docs.ollama.com/)
 - Notebook de referência (arquivo local fornecido): `lab_TSpec.ipynb`
 
-As execuções de referência estão documentadas no [relatório de replay e detecção](REPLAY_DETECCAO.md) e no [relatório do ciclo de ação simulada](ACAO_SIMULADA.md). A próxima etapa prevista é integrar um agente Ollama à interface de propostas.
+As execuções de referência estão documentadas no [relatório de replay e detecção](REPLAY_DETECCAO.md) e no [relatório do ciclo de ação simulada](ACAO_SIMULADA.md). A Etapa 4 integra um agente Ollama à mesma interface de propostas, com validação local, auditoria e fallback Python. A próxima etapa prevista é a interface MCP. [Experimentos com o agente](AGENTE_OLLAMA.md)

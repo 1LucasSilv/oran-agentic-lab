@@ -12,6 +12,7 @@ from zipfile import BadZipFile
 import pandas as pd
 
 from .data import KPM, OFFICIAL_SHA256
+from .agent import AgentConfig, AgentSession
 from .detector import INSUFFICIENT, NORMAL, PRB, SUSPECT, THROUGHPUT, DetectorConfig, detect
 from .replay import ReplayConfig, load_kpm
 from .simulator import EXPAND, INTENSIFY, NO_ACTION, PRIORITIZE, REGISTER_ALERT, Limits, Simulator
@@ -64,17 +65,24 @@ def _controlled_actions(simulator: Simulator):
 
 def run_loop(frame: pd.DataFrame, source: dict, replay_config: ReplayConfig = ReplayConfig(),
              detector_config: DetectorConfig = DetectorConfig(), limits: Limits = Limits(),
-             *, controlled: bool = False) -> dict:
+             *, controlled: bool = False, agent_config: AgentConfig | None = None, client=None) -> dict:
     """Executa o detector, aplica a política e devolve a trilha e o estado serializáveis."""
     detections = list(detect(frame, replay_config, detector_config))
     simulator = Simulator(frame, detections, replay_config.advance, limits)
     initial = simulator.state()
+    if controlled and agent_config:
+        raise ValueError("A demonstração controlada requer a política Python")
+    agent = AgentSession(agent_config, client) if agent_config else None
     for detection in detections:
-        simulator.apply(propose(detection), window_id=detection["janela"]["id"],
-                        origin="politica_deterministica")
+        if agent:
+            agent.decide(detection, simulator, propose)
+        else:
+            simulator.apply(propose(detection), window_id=detection["janela"]["id"],
+                            origin="politica_deterministica")
     if controlled:
         _controlled_actions(simulator)
     return {
+        **({"agente": agent.report()} if agent else {}),
         "versao_formato": 1,
         "fonte": source,
         "linhas": len(frame),
@@ -117,13 +125,21 @@ def _report(result: dict) -> str:
         f"Avanço de inspeção **{simulator['estado_inicial']['inspecao']['avanco_registros']} → "
         f"{state['inspecao']['avanco_registros']} registros**.", "",
     ]
+    if "agente" in result:
+        agent = result["agente"]
+        lines += ["## Inferência local", "",
+                  f"Modelo `{agent['config']['model']}`. Chamadas de chat: {agent['chamadas']}. "
+                  f"Falhas: {agent['falhas']}. Decisões de fallback: {agent['fallbacks']}.",
+                  "As contagens de propostas acima incluem todos os validadores acionados. "
+                  "Cada decisão no JSON identifica a origem e as entradas correspondentes no histórico.", ""]
     highlighted = [item for item in history if item["validacao"]["estado"] == "recusada"
                    or item["execucao"]["estado"] != "nao_executada"]
     if highlighted:
         lines += ["## Ações que alteraram o estado, recusas e falhas", ""]
         for item in highlighted:
             outcome = (item["validacao"] if item["validacao"]["estado"] == "recusada" else item["execucao"])
-            lines.append(f"- Decisão {item['id']} · `{item['proposta']['acao']}` · **{outcome['estado']}**. "
+            origin = f"{item['origem']} · " if "agente" in result else ""
+            lines.append(f"- Decisão {item['id']} · {origin}`{item['proposta']['acao']}` · **{outcome['estado']}**. "
                          f"{outcome['justificativa']}.")
         lines.append("")
     lines.extend([
@@ -156,6 +172,17 @@ def main(argv=None):
     parser.add_argument("--saida", type=Path)
     parser.add_argument("--tamanho", type=int, help="Registros por janela na execução com Excel")
     parser.add_argument("--avanco", type=int, help="Registros entre janelas na execução com Excel")
+    parser.add_argument("--modo", choices=("python", "ollama"), help="Experimento da Etapa 4")
+    parser.add_argument("--modelo", default=AgentConfig.model)
+    parser.add_argument("--api", default=AgentConfig.url)
+    parser.add_argument("--timeout", type=float, default=AgentConfig.timeout)
+    parser.add_argument("--temperatura", type=float, default=AgentConfig.temperature)
+    parser.add_argument("--seed", type=int, default=AgentConfig.seed)
+    parser.add_argument("--contexto", type=int, default=AgentConfig.num_ctx)
+    parser.add_argument("--geracao", type=int, default=AgentConfig.num_predict)
+    parser.add_argument("--max-chamadas", type=int, default=AgentConfig.max_calls)
+    parser.add_argument("--falhas-consecutivas", type=int, default=AgentConfig.max_failures)
+    parser.add_argument("--selecao", choices=("suspeitas", "todas"), default=AgentConfig.selection)
     args = parser.parse_args(argv)
     if (args.excel is not None) == args.sintetico:
         parser.error("Informe o Excel ou use --sintetico")
@@ -176,8 +203,16 @@ def main(argv=None):
             size = ReplayConfig.size if args.tamanho is None else args.tamanho
             config = ReplayConfig(size=size, stride=args.avanco)
             subdir = "oficial" if official else "outro_excel"
-        result = run_loop(frame, source, config, controlled=args.sintetico)
-        report = write_results(result, args.saida or Path("results/etapa3") / subdir)
+        agent_config = None
+        if args.modo == "ollama":
+            agent_config = AgentConfig(model=args.modelo, url=args.api, timeout=args.timeout,
+                                       temperature=args.temperatura, seed=args.seed, num_ctx=args.contexto,
+                                       num_predict=args.geracao, max_calls=args.max_chamadas,
+                                       max_failures=args.falhas_consecutivas, selection=args.selecao)
+        result = run_loop(frame, source, config, controlled=args.sintetico and args.modo is None,
+                          agent_config=agent_config)
+        folder = Path("results/etapa4") / args.modo if args.modo else Path("results/etapa3")
+        report = write_results(result, args.saida or folder / subdir)
     except (ValueError, OSError, BadZipFile) as error:
         parser.exit(2, f"Erro: {error}\n")
     print(report)

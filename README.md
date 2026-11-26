@@ -71,3 +71,16 @@ oran-loop --sintetico
 Cada execução gera `resultados.json` e `relatorio.md` em `results/etapa3/oficial/` ou `results/etapa3/sintetico/`. Escolha outro diretório com `--saida`. Para planilhas locais, `--aba`, `--tamanho` e `--avanco` configuram o replay.
 
 A política propõe o registro de novos episódios suspeitos e justifica quando deixa o estado operacional igual. O cenário sintético exercita as cinco ações, incluindo recusas por duplicação e excesso de tamanho. O JSON conecta o estado e a auditoria às evidências do detector. [Estado, validação e exemplos](docs/ACAO_SIMULADA.md)
+
+## Comparar a política Python e o agente local
+
+Com a instalação editável do laboratório ativa, execute os três experimentos a partir da raiz. O modo Ollama usa o serviço em loopback e o modelo local `qwen2.5:1.5b`. Consulte os modelos instalados com `ollama list`.
+
+```bash
+arquivo='data/raw/20250321_11.17.57_KPM_vs_iper3_1000ms_05_weeks(2).xlsx'
+oran-loop --sintetico --modo python
+oran-loop --sintetico --modo ollama --selecao suspeitas --max-chamadas 2
+oran-loop "$arquivo" --modo ollama --selecao todas --max-chamadas 2
+```
+
+O modo explícito grava os resultados em `results/etapa4/<modo>/<origem>/`. O simulador recebe uma decisão final por janela. No modo Ollama, o JSON também identifica tentativas recusadas, a resposta bruta e a política que assumiu cada fallback. O comando sem `--modo` continua disponível para a demonstração da Etapa 3. [Instalação, configuração, protocolo e resultados do agente](docs/AGENTE_OLLAMA.md)
