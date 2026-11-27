@@ -1,7 +1,7 @@
 # Plano de desenvolvimento — Laboratório de IA Agêntica para Redes 5G Open RAN
 
 **Identificador do projeto:** `oran-agentic-lab`  
-**Estado:** Etapas 0 a 5 aprovadas, Etapa 5.1 validada e Etapa 6 implementada com RAG opcional. [Status e evidências](STATUS_PROJETO.md)\
+**Estado:** Etapas 0 a 6 aprovadas, incluindo 5.1. Infraestrutura de avaliação da Etapa 7 implementada. A bateria final aguarda autorização. [Status e evidências](STATUS_PROJETO.md)\
 **Abordagem:** protótipo pequeno, incremental, funcional e reproduzível  
 **Ambiente de trabalho:** Python, VS Code + Codex e GitHub. Windows e Linux têm evidências locais nas revisões registradas. A matriz com Windows, Linux e macOS usa Python 3.13.
 
@@ -125,7 +125,8 @@ Ação inicial recomendada: **ampliar a janela de análise** após alerta persis
 | **5. MCP** | Servidor e cliente MCP local, ferramentas de consulta/ação | Testes de chamadas e parâmetros; ações sempre passam pelo validador | `feat: disponibiliza ferramentas mcp` |
 | **5.1. Portabilidade e reprodutibilidade** | README autossuficiente, scripts de preparação, diagnóstico e CI | Dataset com revisão e SHA-256, scripts e suíte validados localmente, workflow preparado para Ubuntu, Windows e macOS, evidências por sistema no status | `chore: melhora portabilidade e reprodutibilidade do laboratorio` |
 | **6. RAG 3GPP** | Corpus verificado, índice cosseno local e contexto documental opcional com ou sem MCP | Respostas identificam referências apresentadas por versão, seção e página. A falta de contexto e citações inválidas são auditadas. | `feat: adiciona consulta rag a normas 3gpp` |
-| **7. Comparação** | Execução padronizada das configurações A/B/C | Mesmos cenários e critérios, com resultados e limitações documentados | `test: compara modelos e configuracoes` |
+| **7. Comparação** | Protocolo A–E, decisão controlada e ciclo completo, piloto, auditoria e revisão humana | Casos congelados, orçamento auditável, piloto e plano final documentados | `feat: adiciona avaliacao experimental reproduzivel` |
+| **7.1. Interface gráfica (proposta futura)** | Interface web local para replay, acompanhamento de eventos e gerenciamento de experimentos | Consumir funções e eventos da Etapa 7 com identificadores e parâmetros preservados | A definir após autorização |
 | **8. Consolidação** | Relatório curto, gráficos, documentação e instruções de reprodução | Terceiro consegue reproduzir o fluxo com dados disponíveis | `docs: consolida resultados do laboratorio` |
 
 ### Marco de entrega prioritário (MVP)
@@ -134,12 +135,15 @@ Ação inicial recomendada: **ampliar a janela de análise** após alerta persis
 
 ## 7. Comparação experimental
 
-Configurações:
+| Configuração | Política | MCP | RAG 3GPP |
+| --- | --- | --- | --- |
+| A | Python determinística | — | — |
+| B | Qwen 2.5 1.5B | — | — |
+| C | Mesmo Qwen | — | Sim |
+| D | Mesmo Qwen | Sim | — |
+| E | Mesmo Qwen | Sim | Sim |
 
-- **A — Regras Python:** decisão determinística, sem LLM (referência operacional).
-- **B — LLM geral:** modelo escolhido via Ollama, sem acesso documental externo.
-- **C — Mesmo LLM + RAG 3GPP:** mesmos casos, prompt-base, limites de ações e parâmetros de inferência; documentos recuperados adicionados com rastreabilidade.
-- **D — Fine-tuning (opcional):** somente se houver **checkpoint realmente ajustado**, documentação e compatibilidade. Não confundir com o notebook RAG do Miguel.
+O protocolo avalia propostas originais e decisões finais em modo controlado e em ciclo completo. A fase de piloto usa casos próprios. A fase final controlada usa seis casos fixos, sementes 42/43/44 e teto de 108 chamadas de chat, incluindo uma decisão final e até uma seleção MCP por oportunidade. O Excel oficial entra em análise exploratória separada, com janelas pré-selecionadas e classificação heurística. [Casos, orçamento e rubrica](EXPERIMENTOS.md)
 
 ### Cuidados para comparação justa
 
@@ -208,7 +212,7 @@ O prompt completo para o ChatGPT Project pode ficar **fora do repositório**, em
 
 O Codex pode implementar **módulos completos por etapa**. O pesquisador participa de decisões, execução, conferência dos resultados e entendimento do funcionamento, **não de cada linha**.
 
-Consulte e atualize o [status do projeto](STATUS_PROJETO.md) a cada etapa. Registre as versões e os resultados observados por sistema. A comparação controlada da Etapa 7 aguarda autorização.
+Consulte e atualize o [status do projeto](STATUS_PROJETO.md) a cada etapa. Registre as versões e os resultados observados por sistema. A execução da bateria final da Etapa 7 aguarda autorização.
 
 Ao terminar uma etapa, entregar:
 

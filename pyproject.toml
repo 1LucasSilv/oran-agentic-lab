@@ -24,6 +24,7 @@ oran-eda = "oran_lab.eda:main"
 oran-replay = "oran_lab.detector:main"
 oran-loop = "oran_lab.loop:main"
 oran-rag = "oran_lab.rag:main"
+oran-experiment = "oran_lab.experiment:main"
 
 [tool.setuptools.package-data]
 oran_lab = ["rag_manifest.json"]

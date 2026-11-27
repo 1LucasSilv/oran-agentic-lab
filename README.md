@@ -208,6 +208,18 @@ Abra **Actions → Testes**, selecione a execução e abra os logs de cada job. 
 
 O [procedimento detalhado para Windows, Linux e macOS](docs/INSTALACAO.md#limpeza-e-desinstalação) indica como conferir caminhos, preservar dados e tratar uma instalação compartilhada do Ollama.
 
+## Planejar uma avaliação científica
+
+O comando `oran-experiment` planeja, executa e agrega a matriz Python, Qwen, Qwen com RAG, Qwen com MCP e Qwen com MCP e RAG. A decisão controlada usa a mesma janela e o mesmo estado inicial. O ciclo completo acompanha a evolução de estado de cada configuração.
+
+```sh
+oran-experiment planejar --fase piloto --saida results/etapa7/meu-piloto
+oran-experiment executar --fase piloto --saida results/etapa7/meu-piloto
+oran-experiment agregar --saida results/etapa7/meu-piloto
+```
+
+O piloto tem teto de 12 chamadas de chat e casos próprios. O plano final controlado usa seis casos distintos e até 108 chamadas. Prepare-o com `oran-experiment planejar --fase final` e revise-o antes de autorizar a execução. As saídas incluem auditorias, tabelas, gráfico e modelo para revisão humana em branco. [Protocolo e comandos](docs/EXPERIMENTOS.md)
+
 ## Resultados e próximos marcos
 
 | Comando | Saída padrão |
@@ -219,9 +231,10 @@ O [procedimento detalhado para Windows, Linux e macOS](docs/INSTALACAO.md#limpez
 | `oran-loop --modo ollama --mcp` | `results/etapa5/ollama-mcp/<origem>/` |
 | `python -m oran_lab.mcp_client` | `results/etapa5/stdio.json` |
 | `oran-loop --modo ollama --rag` | `results/etapa6/ollama-rag/<origem>/` ou `results/etapa6/ollama-mcp-rag/<origem>/` com MCP |
+| `oran-experiment` | `results/etapa7/<execucao>/` para planos, eventos brutos, relatórios e avaliações |
 
 O replay e o loop escrevem `resultados.json` e `relatorio.md`. Use `--saida` para preservar cada execução, com diretórios distintos por sistema e configuração. Dados brutos, ambientes e saídas locais ficam fora do Git.
 
 Na execução oficial de referência no Linux, o detector produziu 38 janelas sobre 1.138 registros KPM e zero alertas. O cenário sintético permitiu verificar ações e recusas do simulador. Os experimentos com Ollama e MCP demonstraram propostas, consultas e fallback. Esses resultados descrevem os casos executados. Novas medições dependem do modelo, do runtime e do hardware. [Replay](docs/REPLAY_DETECCAO.md) · [Simulador](docs/ACAO_SIMULADA.md) · [Agente Ollama](docs/AGENTE_OLLAMA.md) · [MCP](docs/MCP.md)
 
-As Etapas 0 a 5 estão aprovadas. A Etapa 5.1 entregou a preparação reproduzível e a matriz de testes. A Etapa 6 acrescentou RAG opcional com referências 3GPP. A comparação controlada da Etapa 7 aguarda autorização. [Plano técnico](docs/PLANO_LABORATORIO.md) · [Status](docs/STATUS_PROJETO.md) · [Auditoria da planilha](docs/EDA.md) · [Instalação avançada](docs/INSTALACAO.md)
+As Etapas 0 a 6 estão aprovadas, incluindo a preparação reproduzível da Etapa 5.1. A Etapa 7 disponibiliza a infraestrutura experimental. A bateria final aguarda autorização. A interface web local da Etapa 7.1 é uma proposta futura. [Plano técnico](docs/PLANO_LABORATORIO.md) · [Status](docs/STATUS_PROJETO.md) · [Auditoria da planilha](docs/EDA.md) · [Instalação avançada](docs/INSTALACAO.md)
