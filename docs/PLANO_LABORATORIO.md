@@ -1,7 +1,7 @@
 # Plano de desenvolvimento — Laboratório de IA Agêntica para Redes 5G Open RAN
 
 **Identificador do projeto:** `oran-agentic-lab`  
-**Estado:** Etapas 0 a 5 aprovadas, Etapa 5.1 implementada com validação local e matriz GitHub pendente. [Status e evidências](STATUS_PROJETO.md)\
+**Estado:** Etapas 0 a 5 aprovadas, Etapa 5.1 implementada com validação local no Windows e suíte padrão aprovada na matriz do GitHub Actions. [Status e evidências](STATUS_PROJETO.md)\
 **Abordagem:** protótipo pequeno, incremental, funcional e reproduzível  
 **Ambiente de trabalho:** Python, VS Code + Codex e GitHub. Windows e Linux têm evidências locais nas revisões registradas. A matriz com Windows, Linux e macOS usa Python 3.13.
 

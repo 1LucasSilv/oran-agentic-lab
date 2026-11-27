@@ -32,13 +32,23 @@ A EDA registra abas, tipos, lacunas e gráficos. O detector usa uma referência 
 | Agente local | Ollama, serviço HTTP em loopback e uma tag local instalada. Os exemplos usam `qwen2.5:1.5b`. |
 | Ferramentas MCP | Extra `mcp` (SDK Python oficial). A demonstração por stdio funciona sem Ollama. |
 
-Como ponto de partida, use uma CPU de 64 bits com quatro núcleos, 8 GiB de RAM e 2 GiB livres para o modo Python e os testes. Para Ollama com a tag de 1,5 bilhão de parâmetros, prefira 16 GiB de RAM e pelo menos 5 GiB livres para ambiente, runtime, modelo e saídas. São recomendações do laboratório. GPU é opcional e o custo varia com modelo, quantização e contexto. A tag de referência tem cerca de 986 MB. [Ficha da tag](https://ollama.com/library/qwen2.5:1.5b)
+Como ponto de partida, use uma CPU de 64 bits com quatro núcleos e 8 GiB de RAM para o modo Python e os testes. Para Ollama com a tag de 1,5 bilhão de parâmetros, prefira 16 GiB de RAM. GPU é opcional. O consumo depende do modelo, da quantização e do contexto.
+
+| Componente | Espaço em disco |
+| --- | --- |
+| Python base | Cerca de 185 MiB na instalação Windows de referência. Reserve 0,5 GiB se precisar instalar o Python. |
+| Ambiente e dependências Python | Cerca de 264 MiB no `.venv` de referência com `[test,mcp]`. Reserve 0,5 GiB para o ambiente e espaço adicional para downloads e temporários do pip. |
+| Ollama (opcional) | No Windows, o instalador requer pelo menos 4 GB para os binários. No Linux e no macOS, confira o tamanho do pacote da sua plataforma e reserve espaço para a instalação e a extração. [Requisitos do Ollama no Windows](https://docs.ollama.com/windows#filesystem-requirements) |
+| Modelos (opcionais) | `qwen2.5:1.5b` ocupa cerca de 986 MB. Some espaço para cada tag que pretende usar e para o download. [Ficha da tag](https://ollama.com/library/qwen2.5:1.5b) |
+| Dataset e resultados | A planilha oficial ocupa cerca de 152 KiB. As saídas da validação local ocupavam poucos MiB. Para um lote de experimentos, faça uma execução representativa e multiplique o tamanho de sua saída pelo número de execuções que pretende guardar. |
+
+Para começar com Python, reserve 2 GiB livres incluindo temporários e primeiras saídas. Se usar Ollama, some o runtime e os modelos e verifique o espaço livre nos volumes onde cada componente será armazenado.
 
 | Sistema | Evidência |
 | --- | --- |
-| Windows | Etapa 5.1 validada localmente em Windows 11 AMD64 com Python 3.13.0. O status detalha testes e integrações executadas. |
-| Linux | Etapas 0 a 5 aprovadas com 116 testes informados. A nova revisão ainda aguarda execução no runner. |
-| macOS | Execução prevista com os comandos Bash/Zsh. A validação aguarda a execução no runner. |
+| Windows | Suíte padrão aprovada no GitHub Actions. Testes opcionais validados localmente em Windows 11 AMD64 com Python 3.13.0. |
+| Linux | Suíte padrão da Etapa 5.1 aprovada no runner Ubuntu. Há também evidência local das Etapas 0 a 5. |
+| macOS | Suíte padrão da Etapa 5.1 aprovada no runner macOS. |
 
 O histórico e as versões medidas estão no [status do projeto](docs/STATUS_PROJETO.md).
 
@@ -171,7 +181,16 @@ ORAN_TEST_MCP_STDIO=1 python -m pytest -q tests/test_mcp.py
 
 O [workflow Testes](.github/workflows/tests.yml) executa a suíte padrão com Python 3.13 em runners hospedados pelo GitHub para Ubuntu, Windows e macOS. Dispara em pushes para `main`, pull requests destinados a `main` e manualmente. A matriz roda sem dataset oficial, Ollama ou modelos.
 
-Abra **Actions → Testes**, selecione a execução e abra os logs de cada job. Quando o workflow estiver na branch padrão, usuários com acesso de escrita podem abrir **Run workflow**, escolher a branch e rodar a matriz. Erros na preparação do runner, checkout ou acesso a registros de pacotes podem impedir a suíte de iniciar. Se o pytest executar, confira o traceback para localizar o teste e investigar a causa. A configuração da matriz ainda aguarda execução no GitHub. [Como rodar manualmente](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)
+Abra **Actions → Testes**, selecione a execução e abra os logs de cada job. Usuários com acesso de escrita podem abrir **Run workflow**, escolher a branch e rodar a matriz. Erros na preparação do runner, checkout ou acesso a registros de pacotes podem impedir a suíte de iniciar. Se o pytest executar, confira o traceback para localizar o teste e investigar a causa. A execução #1 teve 116 testes aprovados e 2 ignorados em cada runner. [Execução #1](https://github.com/1LucasSilv/oran-agentic-lab/actions/runs/46023193720) · [Como rodar manualmente](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)
+
+## Desinstalar o laboratório
+
+1. Copie resultados científicos, datasets locais e alterações do Git para fora do repositório. Abra a cópia para verificar o backup.
+2. Para uma limpeza parcial, remova apenas os caches do projeto ou o ambiente local `.venv`. Se precisar liberar mais espaço, revise separadamente `data/raw/`, `data/processed/` e `results/`.
+3. Se instalou Ollama para o laboratório, avalie separadamente a remoção da tag baixada e a desinstalação do aplicativo. Preserve Python, Git, VS Code e outros recursos compartilhados.
+4. Para remover a cópia local inteira, feche os processos e mova a pasta `oran-agentic-lab` para a lixeira depois de conferir o backup.
+
+O [procedimento detalhado para Windows, Linux e macOS](docs/INSTALACAO.md#limpeza-e-desinstalação) indica como conferir caminhos, preservar dados e tratar uma instalação compartilhada do Ollama.
 
 ## Resultados e próximos marcos
 
