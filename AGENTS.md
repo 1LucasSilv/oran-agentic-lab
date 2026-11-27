@@ -6,6 +6,8 @@ Este repositório implementa o laboratório **`oran-agentic-lab`**, um protótip
 
 **Fonte de verdade técnica:** [`docs/PLANO_LABORATORIO.md`](docs/PLANO_LABORATORIO.md). Leia o plano antes de propor mudanças amplas. Se o arquivo estiver ausente, informe a ausência; não invente decisões anteriores.
 
+Ao iniciar uma sessão, consulte [`docs/STATUS_PROJETO.md`](docs/STATUS_PROJETO.md) para recuperar a etapa autorizada, a evidência de validação e as pendências. Atualize o status ao concluir cada etapa.
+
 ## Escopo e prioridades
 
 - **Dataset principal:** <https://github.com/CTTCADAPTRU/OAI-KPM-dataset> (arquivo `.xlsx` com KPMs coletados por xApp).
@@ -51,6 +53,13 @@ Este repositório implementa o laboratório **`oran-agentic-lab`**, um protótip
 - Preferir testes com pequenas **fixtures sintéticas claramente identificadas**, sem depender do arquivo real para todo teste automatizado.
 - Não instalar LlamaIndex, FAISS, OpenTelemetry, frameworks multiagentes ou stacks 5G antes de uma etapa que os exija.
 - Documentar os parâmetros de detecção e inferência, versões dos modelos e hipóteses do simulador.
+
+## Portabilidade e reprodutibilidade
+
+- Declare UTF-8 ao ler ou escrever arquivos de texto, inclusive em testes. Para MCP stdio, configure a codificação do cliente e dos pipes do servidor.
+- Use `pathlib`, o interpretador corrente para subprocessos Python e argumentos em lista. Isole caminhos, APIs e comandos específicos por sistema e permita que metadados indisponíveis fiquem sem valor.
+- Documente comandos específicos de PowerShell e Bash/Zsh. Registre o sistema, versões, revisão e hash dos dados, configuração e resultados observados. Use diretórios separados por execução e preserve experimentos anteriores.
+- Diferencie compatibilidade prevista de sistemas efetivamente testados e registre falhas de infraestrutura separadamente. Mantenha a suíte padrão reproduzível com fixtures sintéticas, sem dataset oficial, inferência real ou downloads de modelos.
 
 ## Git, arquivos e segurança
 

@@ -129,7 +129,12 @@ class MCPWindow:
 
 
 async def demo():
-    server = StdioServerParameters(command=sys.executable, args=["-m", "oran_lab.mcp_server"])
+    server = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "oran_lab.mcp_server"],
+        env={"PYTHONIOENCODING": "utf-8"},
+        encoding="utf-8",
+    )
     async with asyncio.timeout(15):
         async with Client(server, read_timeout_seconds=5) as client:
             result = {"origem": "demonstracao_programada", "transporte": "stdio",

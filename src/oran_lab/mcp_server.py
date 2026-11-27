@@ -34,7 +34,7 @@ class LocalServer(MCPServer):
 
 
 def bounded(result):
-    if len(json.dumps(result, allow_nan=False, ensure_ascii=False).encode()) > MAX_RESULT_BYTES:
+    if len(json.dumps(result, allow_nan=False, ensure_ascii=False).encode("utf-8")) > MAX_RESULT_BYTES:
         raise ValueError("Resultado MCP excede o limite de bytes")
     return result
 

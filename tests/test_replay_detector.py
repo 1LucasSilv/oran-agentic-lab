@@ -198,7 +198,7 @@ def test_cli_is_reproducible_and_preserves_synthetic_excel(synthetic_excel, tmp_
               "--tamanho", "2", "--referencia", "1"])
     for name in ("resultados.json", "relatorio.md"):
         assert (folders[0] / name).read_bytes() == (folders[1] / name).read_bytes()
-    result = json.loads((folders[0] / "resultados.json").read_text())
+    result = json.loads((folders[0] / "resultados.json").read_text(encoding="utf-8"))
     assert result["fonte"]["tipo"] == "outro_excel"
     assert result["janelas"][2]["janela"]["registros"] == [5, 6]
     assert len(result["alertas"]) == 1
@@ -208,11 +208,11 @@ def test_cli_is_reproducible_and_preserves_synthetic_excel(synthetic_excel, tmp_
 
 def test_cli_empty_and_replay_only(synthetic_excel, tmp_path):
     main([str(synthetic_excel), "--aba", "Aba vazia", "--somente-replay", "--saida", str(tmp_path)])
-    result = json.loads((tmp_path / "resultados.json").read_text())
+    result = json.loads((tmp_path / "resultados.json").read_text(encoding="utf-8"))
     assert result["linhas"] == 0
     assert result["janelas"] == []
     assert result["detector"] is None
-    assert "Nenhuma janela" in (tmp_path / "relatorio.md").read_text()
+    assert "Nenhuma janela" in (tmp_path / "relatorio.md").read_text(encoding="utf-8")
 
 
 def test_cli_rejects_invalid_input_without_creating_output(synthetic_excel, tmp_path, capsys):

@@ -228,7 +228,7 @@ def test_integrated_synthetic_demo_is_reproducible(tmp_path):
         main(["--sintetico", "--saida", str(output)])
     for name in ("resultados.json", "relatorio.md"):
         assert (outputs[0] / name).read_bytes() == (outputs[1] / name).read_bytes()
-    result = json.loads((outputs[0] / "resultados.json").read_text())
+    result = json.loads((outputs[0] / "resultados.json").read_text(encoding="utf-8"))
     assert result["fonte"]["tipo"] == "sintetico"
     state = result["simulador"]
     assert state["estado_inicial"]["alertas"] == {}
@@ -250,7 +250,7 @@ def test_integrated_excel_preserves_source_and_detection(synthetic_history, tmp_
     content = path.read_bytes()
     output = tmp_path / "excel"
     main([str(path), "--tamanho", "2", "--saida", str(output)])
-    result = json.loads((output / "resultados.json").read_text())
+    result = json.loads((output / "resultados.json").read_text(encoding="utf-8"))
     assert result["deteccoes"] == json.loads(json.dumps(expected))
     assert set(result["simulador"]["estado_final"]["alertas"]) == {EVENT, "alerta-9"}
     assert result["fonte"]["sha256"] == sha256(content).hexdigest()

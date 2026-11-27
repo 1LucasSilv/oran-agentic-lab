@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pandas as pd
 
-OFFICIAL_SHA256 = "d570d8c0567b7ec85fd5e3ca865d1cc109dc741583b01d3ee4f1ff964892d30c"
+from .dataset import OFFICIAL_SHA256
+
 KPM = "KPM Metrics"
 TRAFFIC = "iperf3 traffic"
 OFFICIAL_CLOCKS = {

@@ -1,9 +1,9 @@
 # Plano de desenvolvimento — Laboratório de IA Agêntica para Redes 5G Open RAN
 
 **Identificador do projeto:** `oran-agentic-lab`  
-**Estado:** Etapas 0 a 5 implementadas\
+**Estado:** Etapas 0 a 5 aprovadas, Etapa 5.1 implementada com validação local e matriz GitHub pendente. [Status e evidências](STATUS_PROJETO.md)\
 **Abordagem:** protótipo pequeno, incremental, funcional e reproduzível  
-**Ambiente de trabalho:** Linux, Python, VS Code + Codex e GitHub
+**Ambiente de trabalho:** Python, VS Code + Codex e GitHub. Windows e Linux têm evidências locais nas revisões registradas. A matriz com Windows, Linux e macOS usa Python 3.13.
 
 ## 1. Visão geral
 
@@ -73,7 +73,7 @@ OAI-KPM-dataset (.xlsx)
          ▼
 [Política Python ou agente Ollama — propõe ações]
    │                  │
-   │                  ├── consulta de histórico via MCP (fase posterior)
+   │                  ├── consulta de histórico via MCP (opcional)
    │                  └── RAG 3GPP opcional (fase posterior)
    ▼
 [Validador determinístico de ações]
@@ -123,6 +123,7 @@ Ação inicial recomendada: **ampliar a janela de análise** após alerta persis
 | **3. Loop sem LLM** | Estado do simulador, validação de ações e verificação | Caso controlado altera o simulador; casos inválidos são bloqueados; estado antes/depois registrado | `feat: implementa ciclo de acao simulada` |
 | **4. Agente Ollama** | Decisão assistida por modelo, JSON estruturado e fallback | Modelo pode propor ação; saída inválida é bloqueada; execução não depende de resposta insegura | `feat: integra agente ollama ao ciclo` |
 | **5. MCP** | Servidor e cliente MCP local, ferramentas de consulta/ação | Testes de chamadas e parâmetros; ações sempre passam pelo validador | `feat: disponibiliza ferramentas mcp` |
+| **5.1. Portabilidade e reprodutibilidade** | README autossuficiente, scripts de preparação, diagnóstico e CI | Dataset com revisão e SHA-256, scripts e suíte validados localmente, workflow preparado para Ubuntu, Windows e macOS, evidências por sistema no status | `chore: melhora portabilidade e reprodutibilidade do laboratorio` |
 | **6. RAG 3GPP** | Índice pequeno, consulta com referência técnica | Respostas exibem fonte e versão recuperadas; ausência de contexto é informada | `feat: adiciona consulta rag a normas 3gpp` |
 | **7. Comparação** | Execução padronizada das configurações A/B/C | Mesmos cenários e critérios, com resultados e limitações documentados | `test: compara modelos e configuracoes` |
 | **8. Consolidação** | Relatório curto, gráficos, documentação e instruções de reprodução | Terceiro consegue reproduzir o fluxo com dados disponíveis | `docs: consolida resultados do laboratorio` |
@@ -151,9 +152,11 @@ Configurações:
 
 ## 8. Ferramentas, dependências e recursos
 
-**Essenciais:** Python, `venv`, `pandas`, `openpyxl` (leitura `.xlsx`), `matplotlib`, `pytest`, Ollama e `git`.
+**Essenciais para o modo Python:** Python, `venv`, `pip`, `pandas`, `openpyxl` e `matplotlib`. Use Git para clonar ou obtenha o código em ZIP.
 
-**Conforme necessidade:** Pydantic (saídas estruturadas), MCP Python SDK, bibliotecas de embeddings/índice vetorial e ferramentas para medições de recursos.
+**Por modo:** pytest para testes, Ollama e uma tag local para inferência, MCP Python SDK para ferramentas MCP. A planilha oficial só é necessária para execuções com os dados reais. Bibliotecas de recuperação documental ficam para a etapa correspondente.
+
+A CI instala `.[test,mcp]` e roda a suíte padrão com dados sintéticos. As integrações reais com Ollama e MCP stdio são opcionais. O workflow usa runners hospedados pelo GitHub com permissão de leitura, sem dependência do runtime operacional.
 
 O modelo para o MVP deve ser **configurável**. Testar um SLM pequeno localmente primeiro; Qwen 2.5 7B é candidato de comparação **somente se o equipamento comportar** ou houver ambiente computacional apropriado.
 
@@ -197,13 +200,15 @@ O prompt completo para o ChatGPT Project pode ficar **fora do repositório**, em
 - `main` estável; branches de funcionalidade **quando forem úteis**, sem burocracia desnecessária.
 - Versionar scripts, testes, documentação e **configurações experimentais pequenas**.
 - Por padrão ignorar: `data/raw/`, `data/processed/`, `results/`, `.venv/`, caches e `.env`.
-- Documentar **URL, revisão/commit, nome do Excel, data de acesso, licença e opcionalmente hash** para permitir reproduzir os experimentos.
+- Documentar **URL, revisão/commit, nome do Excel, data de acesso, licença e SHA-256** para permitir reproduzir os experimentos. O downloader verifica o conteúdo antes de publicar o arquivo.
 - Não realizar `git push`, commits, remoções de arquivo ou publicação de dados sem autorização.
 - Nunca colocar senha ou token em fonte, prompt, relatório ou commit.
 
 ## 11. Modo de trabalho e acompanhamento
 
 O Codex pode implementar **módulos completos por etapa**. O pesquisador participa de decisões, execução, conferência dos resultados e entendimento do funcionamento, **não de cada linha**.
+
+Consulte e atualize o [status do projeto](STATUS_PROJETO.md) a cada etapa. Registre as versões e os resultados observados por sistema. A Etapa 6 aguarda autorização.
 
 Ao terminar uma etapa, entregar:
 
