@@ -110,3 +110,49 @@ A execução `results/etapa7/piloto-20261127/` concluiu as dez oportunidades com
 As cinco recusas ocorreram quando o modelo propôs ampliar a janela de um evento ainda inexistente. No caso com throughput ausente, todos os agentes fizeram essa proposta. A concordância final reflete sobretudo a ação do fallback nesse caso. Os resultados são descritivos de dois casos piloto. As notas humanas continuam vazias.
 
 A referência Python sobre o Excel oficial escolheu `nenhuma_acao` nas duas janelas conforme a pré-especificação. Esta execução está em `results/etapa7/excel-python/`. A exploração A–E ficou planejada separadamente. O plano em `results/etapa7/final-planejado/` permanece como registro histórico. A bateria final exige um plano da revisão definitiva e autorização.
+
+## Bateria controlada final
+
+O plano definitivo está em `results/etapa7/final-revisao-definitiva/plano.json`. Foi gerado no commit `b14eccc6b02af39c27f3b60da5aa4cfc055421c7` com SHA-256 de identidade `78205810072de392475bb07445ea843bdfcc4996c67b049cb376bffbdac30498`. A pré-verificação confirmou Ollama 0.40.18, Qwen 2.5 1.5B e EmbeddingGemma pelos respectivos digests e verificou a integridade e a compatibilidade do índice. Os hashes completos dos modelos, do índice e das fontes constam do plano, do manifesto ou do registro de pré-verificação.
+
+O desenho salvo contém as 90 sessões de decisão controlada, com os seis cenários, as cinco configurações e as sementes 42, 43 e 44. O teto de 108 chamadas abrange 72 decisões e até 36 seleções MCP. Temperatura 0, contexto de 8.192, limite de geração de 512, Top-2 e cosseno mínimo de 0,35 foram conferidos antes da execução.
+
+### Execução observada
+
+Em 27 de novembro de 2026, a execução `18d6d4744fcb45e2bf39ca50dacee10d` concluiu **90 de 90 sessões**, com zero pendentes, interrompidas ou com falha de sessão. No Windows 11 AMD64, com Python 3.13.0, Intel Core i5-1235U e 16 GiB de RAM, passaram cerca de **34 min 24 s** até o último evento de janela. Houve 108 chamadas únicas, todas com retorno HTTP 200. Uma decisão do modo E, no cenário de dados ausentes com semente 43, atingiu 512 tokens e não produziu proposta utilizável. O fallback tratou essa falha de resposta.
+
+| Configuração | Chat | Originais concordantes | Aceitas / recusadas pelo validador entre propostas do modelo | Finais concordantes | Fallbacks | Mudanças executadas pelo modelo / fallback / referência |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| A | 0 | — | — | 18/18 | — | 0 / 0 / 6 |
+| B | 18 | 3/18 | 3 / 15 | 18/18 | 15 | 3 / 3 / 0 |
+| C | 18 | 0/18 | 0 / 18 | 18/18 | 18 | 0 / 6 / 0 |
+| D | 36 | 6/18 | 6 / 12 | 18/18 | 12 | 6 / 0 / 0 |
+| E | 36 | 6/18 | 6 / 11 | 18/18 | 12 | 6 / 0 / 0 |
+
+Das 72 oportunidades de decisão do modelo, 15 propostas originais concordaram com o protocolo. Houve 56 recusas de `ampliar_janela_analise` por evento inexistente e uma resposta incompleta. Os 57 fallbacks produziram decisões concordantes, com 9 mudanças. Ao todo, o simulador executou 30 registros de alerta e confirmou 60 decisões finais aceitas sem alteração. Os registros feitos pela referência e pelo fallback são atribuídos ao Python.
+
+| Cenário | B original | C original | D original | E original | Finais A–E, somadas | Fallbacks B–E |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Operação estável | 0/3 | 0/3 | 0/3 | 0/3 | 15/15 | 12 |
+| Queda isolada de throughput UL | 0/3 | 0/3 | 0/3 | 0/3 | 15/15 | 12 |
+| Queda persistente de throughput UL | 3/3 | 0/3 | 3/3 | 3/3 | 15/15 | 3 |
+| Queda simultânea de throughput e PRB UL | 0/3 | 0/3 | 3/3 | 3/3 | 15/15 | 6 |
+| Recuperação | 0/3 | 0/3 | 0/3 | 0/3 | 15/15 | 12 |
+| Dados ausentes | 0/3 | 0/3 | 0/3 | 0/3 | 15/15 | 12 |
+
+As 30 combinações cenário–configuração tiveram ação e parâmetros finais idênticos nas três sementes. A mesma comparação das propostas originais deu **6/6** trincas idênticas em B, **5/6** em C, **3/6** em D e **4/5** trincas comparáveis em E. A trinca de dados ausentes em E tem uma proposta ausente. As três sementes são repetições técnicas da mesma janela.
+
+### Investigações e custos
+
+D e E selecionaram `consultar_historico` 18 vezes cada. As 36 leituras foram válidas e acrescentaram dados pelo critério estrutural do protocolo. Houve zero inválidas e zero redundantes. C e E recuperaram e apresentaram 36 trechos cada. Foram conferidas 27 ocorrências de IDs citados em C e 25 em E. Seis decisões do modelo terminaram com citação conferida, todas em E. A pertinência técnica e o suporte das citações ainda dependem de avaliação humana.
+
+| Configuração | Chat acumulado / mediana por sessão (s) | Tokens de chat entrada / saída | Tokens de entrada em cache | Tempo de leitura MCP (s) | Recuperação RAG (s) | Tokens de embeddings |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| B | 406,40 / 24,57 | 19.329 / 2.455 | 11.582 | — | — | — |
+| C | 515,52 / 27,38 | 28.944 / 2.464 | 18.489 | — | 4,741 | 819 |
+| D | 512,89 / 25,52 | 28.281 / 3.107 | 17.804 | 0,324 | — | — |
+| E | 597,90 / 32,00 | 37.896 / 3.379 | 27.618 | 0,398 | 8,290 | 819 |
+
+A mediana agrega o tempo de chat da sessão, incluindo a seleção em D e E. Os tempos são observações deste host e desta execução, com cache variável. A referência A dispensa chat. Os CSV/JSON em `results/etapa7/final-revisao-definitiva/relatorios/` incluem descritivas, pares, recortes por configuração e cenário e a comparação por semente. A auditoria verificou estados iniciais, expectativas, unicidade dos registros de chat, os gráficos e as 89 respostas exportadas para revisão cega. Nenhuma nota humana foi importada.
+
+Os resultados medem conformidade com o protocolo de seis cenários sintéticos. Eles descrevem comportamento operacional e custos neste desenho. A avaliação de qualidade das justificativas e referências permanece pendente. A Fase I conserva a separação entre decisões simuladas e efeitos de rede.

@@ -1,7 +1,7 @@
 # Plano de desenvolvimento — Laboratório de IA Agêntica para Redes 5G Open RAN
 
 **Identificador do projeto:** `oran-agentic-lab`  
-**Estado:** Etapas 0 a 6 aprovadas, incluindo 5.1. Infraestrutura de avaliação da Etapa 7 implementada. A bateria final aguarda autorização. [Status e evidências](STATUS_PROJETO.md)\
+**Estado:** Etapas 0 a 6 aprovadas, incluindo 5.1. Bateria controlada da Etapa 7 executada e consolidada. Avaliação humana pendente. [Status e evidências](STATUS_PROJETO.md)\
 **Abordagem:** protótipo pequeno, incremental, funcional e reproduzível  
 **Ambiente de trabalho:** Python, VS Code + Codex e GitHub. Windows e Linux têm evidências locais nas revisões registradas. A matriz com Windows, Linux e macOS usa Python 3.13.
 
@@ -171,6 +171,17 @@ O protocolo avalia propostas originais e decisões finais em modo controlado e e
 - Acurácia/F1-score só com **verdade de referência independente e válida**; avaliação por especialista deve ser explicitada como tal.
 - Não assumir que RAG sempre melhora a resposta ou que maior modelo será mais adequado ao hardware.
 
+### Etapa 7.1 — Requisitos futuros da interface web local
+
+- Selecionar dinamicamente os modelos instalados no Ollama e configurar MCP e RAG de forma independente.
+- Alterar parâmetros de inferência, replay, detector e simulador entre execuções.
+- Gerenciar modelos e índices RAG, importar datasets compatíveis, criar cenários sintéticos personalizados e salvar presets reutilizáveis.
+- Monitorar visualmente replay, detector, agente, MCP, RAG, validador e simulador.
+- Oferecer modos de apresentação, exploração e avaliação científica.
+- Preservar identificadores de execução, manifestos e configurações científicas. Novos experimentos terão suas próprias configurações e manifestos. O protocolo da bateria controlada atual permanece preservado.
+
+O planejamento da interface fica sujeito a autorização específica de implementação.
+
 ## 8. Ferramentas, dependências e recursos
 
 **Essenciais para o modo Python:** Python, `venv`, `pip`, `pandas`, `openpyxl` e `matplotlib`. Use Git para clonar ou obtenha o código em ZIP.
@@ -229,7 +240,7 @@ O prompt completo para o ChatGPT Project pode ficar **fora do repositório**, em
 
 O Codex pode implementar **módulos completos por etapa**. O pesquisador participa de decisões, execução, conferência dos resultados e entendimento do funcionamento, **não de cada linha**.
 
-Consulte e atualize o [status do projeto](STATUS_PROJETO.md) a cada etapa. Registre as versões e os resultados observados por sistema. A execução da bateria final da Etapa 7 aguarda autorização.
+Consulte e atualize o [status do projeto](STATUS_PROJETO.md) a cada etapa. Registre as versões e os resultados observados por sistema. A análise da bateria controlada continua com a avaliação humana prevista.
 
 Ao terminar uma etapa, entregar:
 

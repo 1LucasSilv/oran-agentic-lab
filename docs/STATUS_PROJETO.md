@@ -19,7 +19,7 @@ Atualizado em 27 de novembro de 2026.
 | 5 | Aprovada. Ferramentas MCP locais e integração com o agente. |
 | 5.1 | Implementada e validada localmente no Windows. Suíte padrão aprovada nos três runners do GitHub Actions. Documentação de armazenamento e desinstalação disponível. |
 | 6 | Aprovada. RAG 3GPP demonstrado localmente no Windows e suíte padrão aprovada na matriz GitHub. |
-| 7 | Infraestrutura de avaliação implementada. A bateria final aguarda autorização. |
+| 7 | Bateria controlada final executada e consolidada. Avaliação humana pendente. |
 | 7.1 | Proposta futura de interface web local para acompanhar e gerenciar o laboratório. |
 
 ## Implementação e decisões
@@ -51,6 +51,8 @@ Os dois testes opcionais usam Ollama real e MCP stdio. A matriz cobre a suíte p
 
 Na execução #3, para o commit da Etapa 6 `b8cd69b`, Ubuntu, Windows e macOS tiveram 138 testes aprovados e 2 opcionais ignorados em cada runner. [Execução #3](https://github.com/1LucasSilv/oran-agentic-lab/actions/runs/46031000295)
 
+Na execução #5, para o commit dos ajustes pré-bateria `b14eccc`, Ubuntu, Windows e macOS tiveram 152 testes aprovados e 2 opcionais ignorados em cada runner. [Execução #5](https://github.com/1LucasSilv/oran-agentic-lab/actions/runs/46047810873)
+
 ### Execuções locais no Windows
 
 No Windows foram usados Intel Core i5-1235U, 12 CPUs lógicas e 16 GiB de RAM. O Ollama 0.40.18 disponibilizou `qwen2.5:1.5b`, digest `65ec06548149b04c096a120e4a6da9d4017ea809c91734ea5631e89f96ddc57b`. Os primeiros testes sob sandbox encontraram erros de permissão no diretório temporário do pytest, nos diretórios de preparação e nos pipes. A validação prosseguiu em execuções autorizadas fora do sandbox.
@@ -79,7 +81,7 @@ A suíte padrão da Etapa 6 teve 138 testes aprovados e 2 opcionais ignorados. C
 
 O piloto em `results/etapa7/piloto-20261127/` avaliou dez oportunidades e encerrou com 12 chamadas de chat. Três de oito propostas originais dos agentes concordaram com a expectativa. Houve cinco recusas e cinco fallbacks. As dez decisões finais concordaram com as ações pré-fixadas. Quatro consultas MCP acrescentaram dados históricos segundo o critério estrutural. Um agente concluiu com referência conferida, no modo E. As pontuações humanas seguem vazias. [Protocolo e resultados do piloto](EXPERIMENTOS.md)
 
-A referência Python no Excel oficial escolheu `nenhuma_acao` nas janelas 1 e 4 conforme o protocolo, com zero chamadas de chat. O plano A–E exploratório ficou em `results/etapa7/excel-planejado/`, e a execução A em `results/etapa7/excel-python/`. O plano histórico em `results/etapa7/final-planejado/` prevê 90 sessões e teto de 108 chamadas. Gere o plano definitivo em outra pasta após o commit definitivo, pois o plano inclui a revisão Git. Nenhuma sessão final foi iniciada.
+A referência Python no Excel oficial escolheu `nenhuma_acao` nas janelas 1 e 4 conforme o protocolo, com zero chamadas de chat. O plano A–E exploratório ficou em `results/etapa7/excel-planejado/`, e a execução A em `results/etapa7/excel-python/`. O plano histórico em `results/etapa7/final-planejado/` foi preservado. A bateria definitiva usou outro plano, gerado no commit `b14eccc`.
 
 A bateria final agora exige pré-verificação do serviço, dos modelos e do índice conforme a configuração. Os recursos locais foram conferidos sem chamadas de inferência. Os novos gráficos e a consolidação humana foram verificados em uma cópia do piloto, com os resultados originais preservados. O exportador inclui o estado autorizado e as ações disponíveis. O relatório separa critérios principais de documentais e distingue ausências de zero. Nenhuma avaliação humana foi importada.
 
@@ -87,10 +89,12 @@ A suíte padrão local teve 147 testes aprovados e 2 opcionais ignorados. A inst
 
 Após os ajustes pré-bateria, a suíte padrão local teve 152 testes aprovados e 2 opcionais ignorados. O `pip check` passou.
 
+A bateria final em `results/etapa7/final-revisao-definitiva/` concluiu **90 sessões com 108 chamadas únicas e 108 retornos HTTP 200**. Houve 15 propostas originais concordantes em 72 oportunidades do modelo, 56 recusas, uma resposta incompleta e 57 fallbacks. As 90 decisões finais concordaram com o protocolo. As 30 mudanças verificadas no simulador vieram de 15 decisões do modelo, 9 fallbacks e 6 decisões da referência Python. A consolidação preserva os resultados por configuração, cenário e semente. [Resultados e limitações](EXPERIMENTOS.md#bateria-controlada-final)
+
 ## Limitações e pendências
 
 - As integrações opcionais com Ollama e MCP stdio têm evidência local no Windows para a Etapa 5.1. A execução do GitHub Actions cobre a suíte padrão.
 - O detector sinaliza padrões heurísticos. A planilha carece de rótulos de falha e de denominador para interpretar PRB como percentual. A semântica temporal de `Latency` segue indeterminada.
-- Os efeitos verificados pertencem ao simulador. Tempos de inferência dependem de runtime, modelo, cache e hardware. Os casos atuais servem como evidência de funcionamento. Uma conclusão comparativa exige o protocolo controlado do plano.
-- A CI publicou resultados até a Etapa 6. A revisão da Etapa 7 aguarda execução na matriz.
-- A bateria final da Etapa 7 e a futura interface da Etapa 7.1 dependem de autorização. [Plano técnico](PLANO_LABORATORIO.md)
+- Os efeitos verificados pertencem ao simulador. O desenho controlado usa seis cenários sintéticos e repetições técnicas. Tempos de inferência dependem de runtime, modelo, cache e hardware.
+- A avaliação humana das 89 respostas exportadas permanece pendente.
+- A futura interface da Etapa 7.1 está especificada e depende de autorização para implementação. [Plano técnico](PLANO_LABORATORIO.md#etapa-71--requisitos-futuros-da-interface-web-local)
