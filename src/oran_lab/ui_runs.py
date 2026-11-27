@@ -22,6 +22,7 @@ from .ollama import AgentConfig, OllamaClient, strict_json
 from .rag import EMBED_MODEL, Embedder, RagSession, digest_json, model_tag
 from .replay import ReplayConfig, load_kpm
 from .simulator import Limits
+from .ui_resources import SOURCE_ID, custom_source, local_path
 
 ARCHITECTURES = {"A": "Python determinístico", "B": "LLM", "C": "LLM + RAG",
                  "D": "LLM + MCP", "E": "LLM + MCP + RAG"}
@@ -49,7 +50,7 @@ class RunConfig:
     start_paused: bool = False
 
     def __post_init__(self):
-        if self.architecture not in ARCHITECTURES or self.source not in SOURCES:
+        if self.architecture not in ARCHITECTURES or (self.source not in SOURCES and not SOURCE_ID.fullmatch(self.source)):
             raise ValueError("Arquitetura ou fonte desconhecida.")
         if (self.agent is not None) != (self.architecture != "A"):
             raise ValueError("Selecione o gerador apenas para as arquiteturas B–E.")
@@ -77,14 +78,9 @@ class RunConfig:
                       "agent": AgentConfig(**data["agent"]) if data["agent"] else None})
 
 
-def local_path(workspace, relative):
-    path = workspace / relative
-    if path.resolve() != workspace.resolve() / relative:
-        raise ValueError("O recurso deve estar no caminho local autorizado.")
-    return path
-
-
 def data_source(config, workspace):
+    if SOURCE_ID.fullmatch(config.source):
+        return custom_source(workspace, config.source)
     if config.source == "oficial":
         from .data import OFFICIAL_SHA256
 
@@ -177,7 +173,17 @@ def run_path(workspace, run_id):
 
 
 def status(directory):
-    return read_json(directory / "status.json")
+    return read_snapshot(directory / "status.json")
+
+
+def read_snapshot(path):
+    for attempt in range(20):
+        try:
+            return read_json(path)
+        except PermissionError:
+            if attempt == 19:
+                raise
+            sleep(0.025)
 
 
 def publish(path, payload):
@@ -201,7 +207,7 @@ def set_status(directory, state, **payload):
 def current_run(workspace):
     root = runs_root(workspace)
     marker = root / "atual.json"
-    return read_json(marker)["id"] if marker.is_file() else None
+    return read_snapshot(marker)["id"] if marker.is_file() else None
 
 
 def list_runs(workspace):
@@ -246,6 +252,26 @@ def worker_alive(workspace):
         return True
 
 
+def active_experiment(workspace):
+    root = runs_root(workspace)
+    marker = root / "experimento-atual.json"
+    if not marker.is_file():
+        return None
+    run_id = read_snapshot(marker)["id"]
+    if not ID.fullmatch(run_id):
+        raise ValueError("Identificador experimental inválido.")
+    directory = local_path(workspace, Path("results/ui/experimentos") / run_id)
+    snapshot = status(directory)
+    if snapshot["estado"] in TERMINAL:
+        return None
+    elapsed = (datetime.now(timezone.utc) - datetime.fromisoformat(snapshot["data_utc"])).total_seconds()
+    if worker_alive(workspace) or (snapshot["estado"] == "iniciando" and elapsed < 60):
+        return run_id
+    set_status(directory, "falha", **{k: v for k, v in snapshot.items() if k not in ("estado", "data_utc", "erro")},
+               erro="O worker experimental terminou sem publicar o estado final.")
+    return None
+
+
 def active_run(workspace):
     if current_run(workspace) is None:
         return None
@@ -271,8 +297,8 @@ def _active_run(workspace):
     return None
 
 
-def spawn_worker(workspace, run_id, log):
-    command = [sys.executable, "-m", "oran_lab.ui_runs", run_id]
+def spawn_worker(workspace, run_id, log, *, module="oran_lab.ui_runs"):
+    command = [sys.executable, "-m", module, run_id]
     flags = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
              if os.name == "nt" else {"start_new_session": True})
     with log.open("ab") as stream:
@@ -289,8 +315,8 @@ def start_run(config, workspace, *, request_id=None, spawn=spawn_worker, prepare
             if read_json(directory / "manifesto.json")["configuracao"] != canonical:
                 raise ValueError("Este identificador já possui configuração imutável.")
             return run_id
-        if _active_run(workspace) or worker_alive(workspace):
-            raise ValueError("Já existe uma execução operacional ativa.")
+        if _active_run(workspace) or active_experiment(workspace) or worker_alive(workspace):
+            raise ValueError("Já existe uma execução ou manutenção ativa.")
         _, _, resources, _, _ = prepare_run(config, workspace)
         atomic_json(directory / "manifesto.json", {"id": run_id, "inicio_utc": now(), "codigo": code_identity(),
                     "versoes": {**dependency_versions(), "python": sys.version.split()[0],

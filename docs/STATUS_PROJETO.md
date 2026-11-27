@@ -20,8 +20,8 @@ Atualizado em 27 de novembro de 2026.
 | 5.1 | Implementada e validada localmente no Windows. Suíte padrão aprovada nos três runners do GitHub Actions. Documentação de armazenamento e desinstalação disponível. |
 | 6 | Aprovada. RAG 3GPP demonstrado localmente no Windows e suíte padrão aprovada na matriz GitHub. |
 | 7 | Bateria controlada final executada e consolidada. Avaliação humana pendente. |
-| 7.1.1 | Interface local, configuração, monitoramento e inspeção do agente implementados. |
-| 7.1.2 | Gerenciamento de recursos e experimentos. Aguarda autorização. |
+| 7.1.1 | Aprovada funcionalmente. Matriz GitHub do commit `2c9acaa` aprovada, conforme registro informado pelo pesquisador. |
+| 7.1.2 | Gerenciamento de recursos, experimentos e navegação implementados e validados localmente no Windows. |
 | 7.1.3 | Resultados, avaliação científica e modo de apresentação. Aguarda autorização. |
 
 ## Implementação e decisões
@@ -97,7 +97,13 @@ A bateria final em `results/etapa7/final-revisao-definitiva/` concluiu **90 sess
 
 A interface abriu em 127.0.0.1:8501. O worker Python verificou pausa, avanço e continuação e concluiu oito janelas. O worker com Qwen, MCP e RAG gravou oito janelas e quatro chamadas HTTP 200. A demonstração preservou o resultado completo e registrou um bloqueio concorrente ao publicar o status final. O teste de regressão cobre a tentativa adicional de publicação. A revisão local preservou o manifesto e as 108 reservas da bateria científica. [Interface e evidências](INTERFACE.md#demonstrações-locais)
 
-A revalidação Python publicou a conclusão sob leitura concorrente. A suíte padrão local teve 160 aprovados e dois opcionais ignorados. O `pip check` passou e as quatro páginas foram capturadas. A validação desta revisão na matriz GitHub permanece pendente.
+A revalidação Python publicou a conclusão sob leitura concorrente. A suíte padrão local teve 160 aprovados e dois opcionais ignorados. O `pip check` passou e as quatro páginas foram capturadas.
+
+### Etapa 7.1.2 no Windows
+
+Windows 11 AMD64, Python 3.13.0 e Ollama 0.40.18. A suíte padrão teve **171 testes aprovados e 2 opcionais ignorados** e o `pip check` confirmou as dependências. AppTest navegou pelas nove páginas. Fixtures verificaram a auditoria de CSV e XLSX, a imutabilidade, a identidade de modelos e índices, a trava e a execução controlada A–E com clientes simulados. As nove capturas foram gravadas localmente. A matriz desta revisão ainda aguarda execução.
+
+O experimento Python controlado concluiu uma sessão sem chat. A execução E concluiu oito janelas com quatro chamadas de chat e publicou o estado final durante a consulta concorrente. Houve um fallback que registrou o alerta e uma decisão do modelo aceita sem efeito. O plano da bateria científica preservou o hash lógico `78205810072de392475bb07445ea843bdfcc4996c67b049cb376bffbdac30498` e as 108 reservas. [Demonstrações e IDs](INTERFACE.md#etapa-712-no-windows)
 
 ## Limitações e pendências
 
@@ -105,4 +111,4 @@ A revalidação Python publicou a conclusão sob leitura concorrente. A suíte p
 - O detector sinaliza padrões heurísticos. A planilha carece de rótulos de falha e de denominador para interpretar PRB como percentual. A semântica temporal de `Latency` segue indeterminada.
 - Os efeitos verificados pertencem ao simulador. O desenho controlado usa seis cenários sintéticos e repetições técnicas. Tempos de inferência dependem de runtime, modelo, cache e hardware.
 - A avaliação humana das 89 respostas exportadas permanece pendente.
-- As entregas de gerenciamento, avaliação científica e apresentação dependem da autorização das Etapas 7.1.2 e 7.1.3. [Plano técnico](PLANO_LABORATORIO.md#etapa-71--requisitos-da-interface-web-local)
+- Reprodução visual dos eventos gravados, comparação de resultados, avaliação científica e modo de apresentação aguardam autorização da Etapa 7.1.3. [Plano técnico](PLANO_LABORATORIO.md#etapa-71--requisitos-da-interface-web-local)

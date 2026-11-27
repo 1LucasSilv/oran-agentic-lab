@@ -9,12 +9,15 @@ from oran_lab import ui_runs
 pytest.importorskip("streamlit")
 pytest.importorskip("plotly")
 from streamlit.testing.v1 import AppTest
+from oran_lab import ui_pages
 
 APP = Path(ui_runs.__file__).with_name("ui_app.py")
 
 
 def test_navigation_configure_and_monitor_with_reruns(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(ui_pages, "inventory", lambda: ("teste", []))
+    ui_pages.local_inventory.clear()
     runs = []
     real_start = ui_runs.start_run
 
@@ -26,14 +29,31 @@ def test_navigation_configure_and_monitor_with_reruns(tmp_path, monkeypatch):
     monkeypatch.setattr(ui_runs, "start_run", start)
     app = AppTest.from_file(str(APP), default_timeout=15).run()
     assert not app.exception and app.title[0].value == "O-RAN Agentic Lab"
-    app.radio[0].set_value("Configurar execução").run()
+    app.button(key="nav-Configurar execução").click().run()
     assert not app.exception and app.title[0].value == "Configurar execução"
     next(b for b in app.button if b.label == "Iniciar execução").click().run()
     assert not app.exception and app.success
     app.run()
     assert len(runs) == 1
-    app.radio[0].set_value("Monitoramento").run()
+    app.button(key="nav-Monitoramento").click().run()
     assert not app.exception and len(app.get("plotly_chart")) == 2
     assert any(m.label == "Janela atual" and m.value == "8" for m in app.metric)
-    app.radio[0].set_value("Inspeção do agente").run()
+    app.button(key="nav-Inspeção do agente").click().run()
     assert not app.exception and any("Python" in c.value for c in app.caption)
+
+
+def test_resource_pages_and_no_inference_preview(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    def unavailable():
+        raise ValueError("Ollama indisponível para o teste")
+
+    monkeypatch.setattr(ui_pages, "inventory", unavailable)
+    ui_pages.local_inventory.clear()
+    app = AppTest.from_file(str(APP), default_timeout=15).run()
+    for page in ("Modelos de IA", "Datasets", "Base de conhecimento", "Cenários e presets", "Experimentos"):
+        app.button(key=f"nav-{page}").click().run()
+        assert not app.exception and app.title[0].value == page
+    next(button for button in app.button if button.label == "Gerar plano sem inferência").click().run()
+    assert not app.exception and any(m.label == "Sessões" and m.value == "1" for m in app.metric)
+    assert not list((tmp_path / "results/ui/experimentos").glob("*/manifesto.json"))

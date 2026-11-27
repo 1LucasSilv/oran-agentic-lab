@@ -144,7 +144,7 @@ Ação inicial recomendada: **ampliar a janela de análise** após alerta persis
 | **6. RAG 3GPP** | Corpus verificado, índice cosseno local e contexto documental opcional com ou sem MCP | Respostas identificam referências apresentadas por versão, seção e página. A falta de contexto e citações inválidas são auditadas. | `feat: adiciona consulta rag a normas 3gpp` |
 | **7. Comparação** | Protocolo A–E, decisão controlada e ciclo completo, piloto, auditoria e revisão humana | Casos congelados, orçamento auditável, piloto e plano final documentados | `feat: adiciona avaliacao experimental reproduzivel` |
 | **7.1.1. Interface base, configuração e monitoramento** | Streamlit e Plotly em loopback, com worker local e inspeção do agente | Configuração imutável, controles por janela e eventos de execução local verificáveis | `feat: adiciona interface operacional local` |
-| **7.1.2. Gerenciamento de recursos e experimentos** | Gerenciar recursos, presets e experimentos pela interface | Novas execuções preservam os protocolos e manifestos existentes | A definir após autorização |
+| **7.1.2. Gerenciamento de recursos e experimentos** | Catálogos locais, auditoria de fontes, cenários, presets e comparações configuráveis | Confirmação, teto de chat e trava compartilhada. Novas execuções preservam os protocolos e manifestos existentes | `feat: gerencia recursos e experimentos na interface local` |
 | **7.1.3. Resultados, avaliação científica e modo de apresentação** | Consultar resultados, avaliação e apresentação | Relatórios e avaliações humanas identificados por execução | A definir após autorização |
 | **8. Consolidação** | Relatório curto, gráficos, documentação e instruções de reprodução | Terceiro consegue reproduzir o fluxo com dados disponíveis | `docs: consolida resultados do laboratorio` |
 
@@ -182,7 +182,7 @@ O protocolo avalia propostas originais e decisões finais em modo controlado e e
 - Oferecer modos de apresentação, exploração e avaliação científica.
 - Preservar identificadores de execução, manifestos e configurações científicas. Novos experimentos terão suas próprias configurações e manifestos. O protocolo da bateria controlada atual permanece preservado.
 
-A Etapa 7.1.1 cobre configuração operacional, monitoramento e inspeção. Consulte o [guia da interface](INTERFACE.md). As demais entregas pertencem às Etapas 7.1.2 e 7.1.3 e dependem de autorização específica.
+A Etapa 7.1.1 cobre configuração operacional, monitoramento e inspeção. A Etapa 7.1.2 acrescenta navegação agrupada, importação de fontes com hash e auditoria, catálogo de modelos e índices, cenários e presets versionados e experimentos configuráveis. O worker compartilha uma trava com operações de recursos da interface. Os novos experimentos registram variáveis comuns, diferenças entre tratamentos, identidade dos recursos e orçamento, em diretório próprio. A reprodução visual de eventos gravados, comparação de resultados, avaliação e apresentação pertencem à Etapa 7.1.3 e aguardam autorização. [Guia da interface](INTERFACE.md)
 
 ## 8. Ferramentas, dependências e recursos
 

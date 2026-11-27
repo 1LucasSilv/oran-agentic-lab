@@ -3,22 +3,35 @@
 from http.client import HTTPException
 from pathlib import Path
 from uuid import uuid4
+from dataclasses import replace
 
 import plotly.graph_objects as go
 import pandas as pd
 import streamlit as st
 
-from oran_lab.detector import INSUFFICIENT, NORMAL, PRB, SUSPECT, THROUGHPUT, DetectorConfig
-from oran_lab.ollama import AgentConfig, strict_json
+from oran_lab.detector import INSUFFICIENT, NORMAL, PRB, SUSPECT, THROUGHPUT
+from oran_lab.ollama import strict_json
 from oran_lab.replay import ReplayConfig
-from oran_lab.simulator import Limits
 from oran_lab.ui_runs import (
-    ARCHITECTURES, SOURCES, TERMINAL, RunConfig, active_run, available_indices, discover_models, list_runs,
-    read_events, run_path, send_command, start_run, status,
+    ARCHITECTURES, SOURCES, TERMINAL, RunConfig, active_run, available_indices, list_runs,
+    read_events, run_path, send_command, start_run, status, worker_alive, active_experiment,
 )
 from oran_lab.experiment import read_json
 
-PAGES = ("Visão geral", "Configurar execução", "Monitoramento", "Inspeção do agente")
+from oran_lab.ui_pages import (
+    choose, config_fields, datasets_page, embedding_tags, experiments_page, generator_tags, hardware_details,
+    initial_preset, knowledge_page, local_inventory, models_page, presets_page, reference_card, refresh_inventory,
+    source_choices,
+)
+from oran_lab.ui_resources import inspect_index, save_preset
+
+NAVIGATION = {
+    "Laboratório": (("⌂", "Visão geral"), ("⚙", "Configurar execução"), ("◫", "Monitoramento"),
+                    ("◎", "Inspeção do agente")),
+    "Pesquisa": (("◈", "Experimentos"),),
+    "Recursos": (("✦", "Modelos de IA"), ("▤", "Datasets"), ("▥", "Base de conhecimento"),
+                 ("◇", "Cenários e presets")),
+}
 LABELS = {
     "iniciando": "Iniciando", "preparando": "Preparando", "executando": "Em execução", "pausada": "Pausada",
     "concluida": "Concluída", "interrompida": "Interrompida", "falha": "Falha", "iniciada": "Em andamento",
@@ -53,37 +66,60 @@ def route(page):
     st.session_state["pagina"] = page
 
 
+def source_name(manifest):
+    key = manifest["configuracao"]["source"]
+    metadata = manifest.get("recursos", {}).get("fonte", {})
+    kind = "Sintético" if metadata.get("tipo") == "sintetico" else "Importado"
+    return SOURCES.get(key, f"{kind} · {metadata.get('nome', key)}")
+
+
 def overview(workspace):
     st.title("O-RAN Agentic Lab")
-    st.write("Configure uma execução, acompanhe janelas de KPM e inspecione as decisões do simulador.")
+    st.write("Replay de KPMs, investigação com MCP e RAG e decisão em simulador.")
+    hardware_details()
+    st.button("Verificar ambiente novamente", on_click=refresh_inventory)
+    version, models, error = local_inventory()
+    current = active_run(workspace) or active_experiment(workspace)
     runs = list_runs(workspace)
-    current = active_run(workspace)
-    recent = runs[0] if runs else None
-    a, b, c = st.columns(3)
-    a.metric("Execução operacional", "Ativa" if current else "Livre")
-    b.metric("Execuções nesta interface", len(runs))
-    c.metric("Último resultado", LABELS.get(status(run_path(workspace, recent["id"]))["estado"], "—") if recent else "—")
-    st.subheader("Fluxo de trabalho")
-    labels = ["Configurar execução", "Monitoramento", "Inspeção do agente"]
-    descriptions = ["Escolha a origem dos KPMs, o modo de decisão e os limites operacionais.",
-                    "Controle o avanço do replay e acompanhe detector, consultas e ações.",
-                    "Confira entradas do modelo, propostas, referências e efeitos no simulador."]
-    for col, label, detail in zip(st.columns(3), labels, descriptions, strict=True):
+    compatible = 0
+    installed_embeddings = {row["tag"]: row["digest"] for row in models if row["tag"] in embedding_tags(models)}
+    for name in available_indices(workspace):
+        try:
+            meta = inspect_index(workspace, name)["metadados"]
+            compatible += int(bool(installed_embeddings.get(meta["modelo"])) and
+                              installed_embeddings[meta["modelo"]] == meta["digest"])
+        except (OSError, ValueError, KeyError):
+            continue
+    a, b, c, d = st.columns(4)
+    a.metric("Ollama local", version or "Indisponível")
+    b.metric("Geradores locais", len(generator_tags(models)) if version else "—")
+    c.metric("Índices RAG compatíveis", compatible if version else "—")
+    d.metric("Worker local", "Em atividade" if current or worker_alive(workspace) else "Livre")
+    if error:
+        st.caption(error)
+    st.subheader("Fluxo do laboratório")
+    for col, title, detail in zip(st.columns(4), ("Dados", "Detector", "Decisão", "Simulador"),
+                                  ("Registros por janela", "Heurísticas de UL", "Python ou modelo local",
+                                   "Validação e verificação"), strict=True):
         with col, st.container(border=True):
-            st.markdown(f"**{label}**")
-            st.write(detail)
-            st.button(f"Abrir {label.lower()}", on_click=route, args=(label,), width="stretch")
-    st.caption("O Excel oficial contém dados históricos. Os cenários sintéticos são identificados na seleção.")
-
-
-@st.cache_data(ttl=8, show_spinner=False)
-def model_choices():
-    return discover_models()
+            st.markdown(f"**{title}**")
+            st.caption(detail)
+    st.subheader("Acesso rápido")
+    for col, target in zip(st.columns(3), ("Configurar execução", "Experimentos", "Datasets"), strict=True):
+        col.button(target, on_click=route, args=(target,), width="stretch", key=f"shortcut-{target}")
+    st.subheader("Execuções operacionais recentes")
+    if runs:
+        st.dataframe([{"ID": row["id"][:12], "Início (UTC)": row["inicio_utc"][:19],
+                       "Fonte": source_name(row), "Arquitetura": row["configuracao"]["architecture"],
+                       "Estado": LABELS.get(status(run_path(workspace, row["id"]))["estado"], "—")}
+                      for row in runs[:5]], hide_index=True, width="stretch")
+    else:
+        st.caption("Nenhuma execução operacional registrada.")
 
 
 def configure(workspace):
     st.title("Configurar execução")
-    st.caption("Configuração exploratória. Os parâmetros são fixados no manifesto ao iniciar.")
+    st.caption("Os parâmetros e recursos são fixados no manifesto ao iniciar.")
     old = st.session_state.get("submitted_run")
     if old:
         st.success(f"Execução criada · {old[:8]}")
@@ -95,90 +131,57 @@ def configure(workspace):
             st.rerun()
         return
 
+    draft = st.session_state.get("preset_config")
+    preferred = st.session_state.get("modelo_preferido")
+    revision = st.session_state.get("preset_revision", 0)
     a, b = st.columns(2)
-    architecture = a.selectbox("Arquitetura", ARCHITECTURES, format_func=lambda key: f"{key} · {ARCHITECTURES[key]}")
-    source = b.selectbox("Fonte dos KPMs", SOURCES, format_func=SOURCES.get)
+    architecture = a.selectbox("Arquitetura", ARCHITECTURES,
+                               index=choose(ARCHITECTURES, draft.architecture if draft else "B" if preferred else "A"),
+                               format_func=lambda key: f"{key} · {ARCHITECTURES[key]}", key=f"arch-{revision}")
+    sources = source_choices(workspace)
+    source = b.selectbox("Fonte dos KPMs", sources, index=choose(sources, draft.source if draft else None),
+                         format_func=sources.get, key=f"source-{revision}")
     model = index = None
     ready = True
     if architecture != "A":
-        if st.button("Atualizar modelos locais"):
-            model_choices.clear()
-        try:
-            tags, server = model_choices()
-        except ERRORS as error:
-            st.warning(str(error))
-            tags, server = [], None
-        model = st.selectbox("Modelo gerador local", tags, index=0 if tags else None)
+        st.button("Atualizar modelos locais", on_click=refresh_inventory)
+        rows = local_inventory()
+        if rows[2]:
+            st.warning(rows[2])
+        tags = generator_tags(rows[1])
+        model = st.selectbox("Modelo gerador local", tags,
+                             index=choose(tags, draft.agent.model if draft and draft.agent else preferred),
+                             key=f"model-{revision}")
         ready = bool(model)
-        if server:
-            st.caption(f"Ollama {server} · loopback")
-        if not tags:
-            st.info("Para B–E, o Ollama precisa oferecer um modelo local de geração já instalado.")
     if architecture in "CE":
         indices = available_indices(workspace)
-        index = st.selectbox("Índice RAG local", indices, index=0 if indices else None)
+        index = st.selectbox("Índice RAG local", indices, index=choose(indices, draft.index if draft else "indice.json"),
+                             key=f"index-{revision}")
         ready &= bool(index)
         if not indices:
-            st.info("Prepare um índice compatível em data/rag com oran-rag indexar.")
+            st.info("Use Base de conhecimento para preparar um índice compatível.")
 
     if "request_id" not in st.session_state:
         st.session_state["request_id"] = uuid4().hex
-    default_size = 30 if source == "oficial" else 2 if source == "demonstracao" else 3
-    with st.form(f"config-{source}-{architecture}"):
-        st.subheader("Replay e detector")
-        x, y = st.columns(2)
-        size = x.number_input("Tamanho da janela (registros)", 1, 4096, default_size)
-        stride = y.number_input("Avanço do replay (registros)", 1, 4096, default_size)
-        x, y, z = st.columns(3)
-        reference = x.number_input("Janelas de referência", 1, 100, 3)
-        threshold = y.number_input("Queda mínima de throughput (%)", 1, 100, 30)
-        persistence = z.number_input("Janelas de persistência", 1, 100, 2)
-        x, y = st.columns(2)
-        coverage = x.number_input("Cobertura mínima (%)", 1, 100, 80)
-        prb = y.number_input("Tolerância de queda do PRB (%)", 0, 100, 10)
-        with st.expander("Limites do simulador"):
-            x, y, z = st.columns(3)
-            history = x.number_input("Tamanho máximo do histórico", 1, 4096, 120)
-            budget = y.number_input("Orçamento de registros adicionais", 0, 100000, 240)
-            minimum = z.number_input("Avanço mínimo de inspeção", 1, 4096, 1)
-        if architecture != "A":
-            with st.expander("Inferência Ollama", expanded=True):
-                x, y, z = st.columns(3)
-                temperature = x.number_input("Temperatura", 0.0, 2.0, 0.0, 0.05)
-                seed = y.number_input("Semente", -2147483648, 2147483647, 42)
-                timeout = z.number_input("Timeout de inferência (s)", 1, 600, 90)
-                x, y, z = st.columns(3)
-                context = x.number_input("Contexto (tokens)", 512, 131072, 8192, 128)
-                generation = y.number_input("Geração máxima (tokens)", 1, 8192, 512)
-                calls = z.number_input("Orçamento de chamadas de chat", 1, 4096, 4)
-                selection = st.selectbox("Janelas elegíveis", ("suspeitas", "todas"),
-                                         format_func=lambda x: "Somente suspeitas" if x == "suspeitas" else "Todas")
-        reads, mcp_timeout, top_k, min_score = None, 5, 2, 0.35
-        if architecture in "DE":
-            with st.expander("Consultas MCP"):
-                x, y = st.columns(2)
-                reads = x.number_input("Limite de consultas por janela", 1, 4, 1)
-                mcp_timeout = y.number_input("Timeout MCP (s)", 1, 120, 5)
-        if architecture in "CE":
-            with st.expander("Recuperação RAG"):
-                x, y = st.columns(2)
-                top_k = x.number_input("Top-K", 1, 8, 2)
-                min_score = y.number_input("Similaridade mínima", -1.0, 1.0, 0.35, 0.05)
-        paused = st.checkbox("Iniciar em pausa")
+    size = 30 if source == "oficial" else 2 if source == "demonstracao" else 3
+    defaults = draft or replace(initial_preset(architecture), replay=ReplayConfig(size))
+    with st.form(f"config-{source}-{architecture}-{revision}"):
+        factory = config_fields(architecture, source, model, index, defaults)
+        with st.expander("Salvar como preset"):
+            preset_name = st.text_input("Nome do preset", max_chars=100)
+            save = st.form_submit_button("Salvar configuração", disabled=not ready)
         submitted = st.form_submit_button("Iniciar execução", type="primary", disabled=not ready)
-    if submitted:
+    if save or submitted:
         try:
-            agent = AgentConfig(model=model, seed=seed, num_ctx=context, num_predict=generation, timeout=timeout,
-                                temperature=temperature, max_calls=calls, selection=selection) if model else None
-            config = RunConfig(architecture, source, ReplayConfig(size, stride),
-                               DetectorConfig(reference, threshold / 100, persistence, coverage / 100, prb / 100),
-                               Limits(history, budget, minimum), agent, reads, mcp_timeout, index, top_k, min_score,
-                               paused)
-            st.session_state["submitted_run"] = start_run(config, workspace, request_id=st.session_state["request_id"])
+            config = factory()
+            if save:
+                row = save_preset(workspace, preset_name, config)
+                st.success(f"Preset salvo · {row['id']}")
+            else:
+                st.session_state["submitted_run"] = start_run(config, workspace, request_id=st.session_state["request_id"])
+                st.rerun()
         except ERRORS as error:
             st.error(str(error))
-        else:
-            st.rerun()
 
 
 def choose_run(workspace, key):
@@ -188,7 +191,7 @@ def choose_run(workspace, key):
         return None, None
     run_id = st.selectbox("Execução", records, key=key,
                           format_func=lambda k: f"{k[:8]} · {records[k]['configuracao']['architecture']} · "
-                                                f"{SOURCES[records[k]['configuracao']['source']]}")
+                                                f"{source_name(records[k])}")
     return run_path(workspace, run_id), records[run_id]
 
 
@@ -226,7 +229,7 @@ def live_monitor(workspace):
     snapshot = status(directory)
     events = cached_events(directory)
     state = snapshot["estado"]
-    st.caption(f"{SOURCES[manifest['configuracao']['source']]} · "
+    st.caption(f"{source_name(manifest)} · "
                f"{'execução operacional' if active else 'resultado gravado'} · ID {manifest['id'][:8]}")
     if active:
         mode = read_json(directory / "controle.json")["modo"]
@@ -249,14 +252,15 @@ def live_monitor(workspace):
     completed = [e for e in events if e["componente"] == "janela" and e["estado"] == "concluida"]
     total = next((e["dados"]["total_janelas"] for e in events
                   if e["componente"] == "preparacao" and e["estado"] == "concluida"), None)
-    detection = detections[-1] if detections else None
-    sim = completed[-1]["dados"]["estado_simulador"] if completed else None
     window = started[-1]["janela"] if started else None
+    detection = next((d for d in reversed(detections) if d["janela"]["id"] == window), None)
+    sim = completed[-1]["dados"]["estado_simulador"] if completed else None
     a, b, c, d = st.columns(4)
     a.metric("Estado", LABELS.get(state, state))
     b.metric("Janela atual", str(window) if window is not None else "—")
     c.metric("Detecção", LABELS[detection["situacao"]] if detection else "—")
-    d.metric("Alertas registrados", len(sim["alertas"]) if sim is not None else "—")
+    d.metric("Alertas registrados", len(sim["alertas"]) if sim is not None else "—",
+             help=f"Estado após a janela concluída {completed[-1]['janela']}." if completed else "Aguardando a primeira janela.")
     if total is not None:
         st.progress(len(completed) / total if total else 0, text=f"{len(completed)} de {total} janelas concluídas")
 
@@ -287,9 +291,16 @@ def live_monitor(workspace):
     totals = {key: sum(e["dados"]["tempo_s"] for e in scoped
                        if e["componente"] == key and "tempo_s" in e["dados"])
               for key in COMPONENTS if any(e["componente"] == key and "tempo_s" in e["dados"] for e in scoped)}
+    arch = manifest["configuracao"]["architecture"]
+    disabled = ({"inferencia", "fallback"} if arch == "A" else set())
+    if arch not in "DE":
+        disabled.add("mcp")
+    if arch not in "CE":
+        disabled.add("rag")
+    window_complete = any(item["janela"] == window for item in completed)
     components = pd.DataFrame([
         {"Componente": label, "Estado": LABELS.get(latest[key]["estado"], latest[key]["estado"])
-         if key in latest else "—", "Tempo (s)": display(totals.get(key), 4)}
+         if key in latest else ("Desabilitado" if key in disabled else "Dispensado" if window_complete else "Aguardando"), "Tempo (s)": display(totals.get(key), 4)}
         for key, label in COMPONENTS.items()
     ])
     colors = {"Concluída": "#72E2CD", "Em andamento": "#9AC5FF", "Recusada": "#FFB76E", "Falha": "#FFA09F"}
@@ -326,7 +337,7 @@ def inspect_run(workspace):
     directory, manifest = choose_run(workspace, "inspect_run")
     if directory is None:
         return
-    st.caption(SOURCES[manifest["configuracao"]["source"]])
+    st.caption(source_name(manifest))
     finished = {e["janela"]: e["dados"] for e in cached_events(directory) if e["componente"] == "janela"}
     if not finished:
         st.info("A inspeção estará disponível após a primeira janela concluída.")
@@ -351,12 +362,21 @@ def inspect_run(workspace):
             if raw:
                 st.code(raw, language="json")
             if audit["proposta_modelo"]:
-                st.json(audit["proposta_modelo"])
+                proposal = audit["proposta_modelo"]
+                st.markdown(f"**{proposal['acao'].replace('_', ' ').capitalize()}**")
+                st.write(proposal["justificativa"])
+                st.json(proposal["parametros"], expanded=False)
             st.caption("Justificativa declarada na resposta do modelo.")
         with investigated:
             if audit.get("mcp"):
                 st.markdown("**Chamadas MCP**")
-                st.json(audit["mcp"]["ferramentas"], expanded=2)
+                calls = audit["mcp"]["ferramentas"]
+                if calls:
+                    st.dataframe([{"Ferramenta": row["nome"] or "Seleção",
+                                   "Estado": "Com resultado" if row.get("resultado") is not None else row.get("erro") or "Sem resultado",
+                                   "Tempo (s)": display(row.get("tempo_s"), 4)} for row in calls], hide_index=True)
+                else:
+                    st.caption("Nenhuma ferramenta foi chamada.")
                 if audit["mcp"].get("erro_acao"):
                     st.warning(audit["mcp"]["erro_acao"])
                 with st.expander("Evidência e resposta da seleção MCP"):
@@ -371,10 +391,7 @@ def inspect_run(workspace):
                 st.text(f"Recuperação: {rag['estado']}")
                 hits = {hit["id"]: hit["texto"] for hit in rag["recuperados"]}
                 for hit in rag["referencias_apresentadas"]:
-                    pages = ", ".join(map(str, hit["paginas_pdf"]))
-                    with st.expander(f"{hit['ref']} · {hit['documento']} V{hit['versao']} §{hit['secao']}"):
-                        st.caption(f"Páginas PDF {pages} · cosseno {display(hit['score'], 3)}")
-                        st.text(hits[hit["id"]])
+                    reference_card(hit, hits[hit["id"]])
                 st.json({"ids_citados": rag.get("referencias_citadas"),
                          "validacao_estrutural": rag.get("referencias_validas")})
                 st.caption("A conferência de IDs verifica a estrutura da resposta. O suporte técnico exige avaliação humana.")
@@ -386,6 +403,8 @@ def inspect_run(workspace):
     else:
         st.caption("Decisão da política determinística Python.")
 
+    with st.expander("Auditoria avançada da janela"):
+        st.json(item, expanded=False)
     st.subheader("Validação e efeito no simulador")
     for entry in item["historico"]:
         what = ("Ação executada" if entry["execucao"]["estado"] == "executada" else
@@ -404,21 +423,24 @@ def inspect_run(workspace):
 def main():
     st.set_page_config(page_title="O-RAN Agentic Lab", layout="wide", initial_sidebar_state="expanded")
     st.html(STYLE)
+    workspace = Path.cwd()
+    page = st.session_state.setdefault("pagina", "Visão geral")
     with st.sidebar:
         st.markdown("## O-RAN Agentic Lab")
         st.caption("Replay de KPMs · Simulador")
-        page = st.radio("Navegação", PAGES, key="pagina", label_visibility="collapsed")
-    workspace = Path.cwd()
-    if page == "Visão geral":
-        overview(workspace)
-    elif page == "Configurar execução":
-        configure(workspace)
-    elif page == "Monitoramento":
-        st.title("Monitoramento")
-        live_monitor(workspace)
+        for name, entries in NAVIGATION.items():
+            with st.expander(name, expanded=any(target == page for _, target in entries)):
+                for icon, target in entries:
+                    st.button(f"{icon}  {target}", type="primary" if page == target else "secondary",
+                              key=f"nav-{target}", on_click=route, args=(target,), width="stretch")
+    pages = {"Visão geral": overview, "Configurar execução": configure, "Experimentos": experiments_page,
+             "Modelos de IA": models_page, "Datasets": datasets_page, "Base de conhecimento": knowledge_page,
+             "Cenários e presets": presets_page}
+    if page in pages:
+        pages[page](workspace)
     else:
-        st.title("Inspeção do agente")
-        inspect_run(workspace)
+        st.title(page)
+        (live_monitor if page == "Monitoramento" else inspect_run)(workspace)
 
 
 if __name__ == "__main__":

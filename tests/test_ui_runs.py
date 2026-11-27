@@ -48,6 +48,21 @@ class Client:
         return 200, json.dumps({"done": True, "message": {"role": "assistant", "content": json.dumps(obj)}})
 
 
+def test_read_snapshot_retries_windows_sharing_violation(monkeypatch, tmp_path):
+    calls = []
+
+    def read(path):
+        calls.append(path)
+        if len(calls) == 1:
+            raise PermissionError("arquivo em substituição")
+        return {"estado": "concluida"}
+
+    monkeypatch.setattr(ui_runs, "read_json", read)
+    monkeypatch.setattr(ui_runs, "sleep", lambda _: None)
+    assert status(tmp_path) == {"estado": "concluida"}
+    assert calls == [tmp_path / "status.json"] * 2
+
+
 def test_model_inventory_and_configuration_validation(tmp_path):
     assert discover_models(Client()) == (["gerador:latest"], "fixture")
     with pytest.raises(ValueError, match="indisponível"):

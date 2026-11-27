@@ -1,6 +1,16 @@
-# O-RAN Agentic Lab · Etapa 7.1.1
+# O-RAN Agentic Lab · Interface local
 
-A interface oferece quatro páginas. **Visão geral** mostra a atividade do laboratório. **Configurar execução** seleciona fonte, modo de decisão e limites. **Monitoramento** acompanha o replay histórico. **Inspeção do agente** abre a trilha de uma janela concluída.
+| Grupo | Página | Uso |
+| --- | --- | --- |
+| Laboratório | Visão geral | Verifica Ollama, geradores, índices compatíveis e atividade local. Mostra execuções recentes. |
+| Laboratório | Configurar execução | Seleciona fonte, arquitetura, parâmetros e limites. Salva a configuração como preset. |
+| Laboratório | Monitoramento | Acompanha o replay por janela e controla o worker. |
+| Laboratório | Inspeção do agente | Consulta evidência, proposta, ferramentas, referências e efeito no simulador. |
+| Pesquisa | Experimentos | Planeja comparações, confirma o teto de chat e acompanha sessões. |
+| Recursos | Modelos de IA | Consulta tags locais, capacidades, digests, quantização, disco e residência. |
+| Recursos | Datasets | Verifica o Excel oficial e audita CSV ou XLSX importados. |
+| Recursos | Base de conhecimento | Verifica documentos e índices e permite indexação e busca de teste. |
+| Recursos | Cenários e presets | Edita séries sintéticas e gerencia configurações reutilizáveis. |
 
 ## Instalação e abertura
 
@@ -41,7 +51,22 @@ Selecione a demonstração sintética, um dos cenários existentes ou o Excel of
 
 O monitor plota exclusivamente amostras liberadas pelo replay. Sobreposições são reunidas por Register. As linhas de referência e limiar refletem a detecção publicada da janela corrente. Cobertura em percentual é a fração de medições válidas na janela. Throughput e PRB são exibidos na escala registrada. O estado visual, as durações e o histórico vêm dos eventos persistidos. A página identifica a fonte sintética ou histórica e distingue execução operacional de resultado gravado.
 
-A inspeção mostra as evidências enviadas, o texto de resposta do modelo, a proposta, os resultados MCP e os fragmentos RAG apresentados. A verificação estrutural dos IDs tem um campo próprio. A avaliação da pertinência técnica do trecho é humana. A trilha distingue recusa, fallback, aceitação sem efeito e alteração executada. Os estados anterior e posterior pertencem exclusivamente ao simulador.
+A inspeção mostra evidências, resposta bruta, justificativa, tabelas MCP e cartões dos fragmentos RAG apresentados. O expansor de auditoria preserva o JSON integral da janela. A verificação estrutural dos IDs tem um campo próprio. A avaliação da pertinência técnica do trecho é humana. A trilha distingue recusa, fallback, aceitação sem efeito e alteração executada.
+
+Em execuções instrumentadas, o agente verifica o orçamento antes de enviar o contexto, mesmo em modo sem RAG. A estimativa inclui instruções, schema, evidência e uma reserva para a geração. O RAG também verifica quais trechos cabem no orçamento. A estimativa conservadora pode dispensar a chamada ou reduzir o contexto documental. Consulte o motivo registrado e, quando disponíveis, os tokens efetivos do Ollama.
+
+## Gerenciar recursos
+
+- **Modelos.** Atualize o inventário para verificar a geração, os embeddings e a residência. A página distingue tamanho registrado em disco, memória de residência e VRAM informada pelo Ollama. O espaço livre exibido refere-se ao volume do laboratório. O volume dos modelos pode ser outro. O download de uma nova tag exige autorização e mostra o progresso por camada quando o serviço informa os bytes. Para remover, digite a tag exata. Modelos residentes, versões já instaladas e dependências de índices, presets ou resultados históricos são protegidos. [Download](https://docs.ollama.com/api/pull) · [Remoção](https://docs.ollama.com/api/delete) · [Residência](https://docs.ollama.com/api/ps)
+- **Datasets.** Envie CSV UTF-8 separado por vírgula ou XLSX, até 16 MiB, 100.000 registros e 256 colunas. Selecione a aba, mapeie os quatro campos e selecione o UE se houver mais de um. A auditoria verifica a ordem e a unicidade de Register no UE selecionado. Lacunas são permitidas e começam outro segmento. Métricas ausentes são preservadas e avaliadas pelo detector segundo sua cobertura. Confirme a escala da origem antes de usar os valores. A versão salva contém os bytes originais, SHA-256, auditoria e a tabela usada no replay.
+- **Base de conhecimento.** Confira os hashes e as cláusulas do manifesto oficial. Com os PDFs verificados, escolha um modelo de embeddings instalado e um nome para criar o índice local. A substituição explícita arquiva a versão anterior e exige ausência de referências históricas ou em presets. A busca de teste verifica tag, digest e dimensão e chama somente embeddings. A preparação dos PDFs continua descrita no [guia RAG](RAG.md).
+- **Cenários e presets.** Edite segmentos com quantidade de registros, throughput UL, PRB UL e lacuna de Register. Use a prévia para conferir estabilidade, quedas, recuperação e ausências. Expectativas opcionais de alerta ou de nenhuma ação são declarações anteriores à execução. Ao salvar, cada versão recebe ID e hash próprios. O catálogo oferece presets A–E para carregar após a verificação de recursos. É possível salvar, duplicar e exportar a configuração completa ou reimportar seu JSON, limitado a 16 KiB.
+
+## Planejar experimentos
+
+Na página **Experimentos**, escolha fontes, tratamentos, janelas, sementes, repetições e orçamento. **Gerar plano sem inferência** calcula sessões, oportunidades e teto de chat e apresenta os parâmetros fixados. Confirme o plano para executar. A pré-verificação consulta os modelos e o índice antes de iniciar o worker. A página acompanha reservas de chat e sessões gravadas, incluindo falhas.
+
+Em decisão controlada, cada fonte começa pela mesma janela autorizada e pelo mesmo estado preparado pela política Python. Em ciclo completo, cada sessão começa no início do replay, evolui o próprio estado e tem uma oportunidade por janela. O replay segue o avanço configurado. Exploração livre identifica comparações ad hoc. A finalidade declarada e a configuração real ficam no plano. Consulte o [protocolo configurável](EXPERIMENTOS.md#experimentos-configuráveis-na-interface).
 
 ## Arquitetura e armazenamento
 
@@ -58,11 +83,11 @@ flowchart LR
   Journal --> Ui
 ```
 
-`ui_runs.py` executa pré-verificação, persistência, trava de concorrência e controle por fronteira de janela. A UI chama a mesma API local usada na demonstração. O processo separado reutiliza `run_loop`, `AgentSession`, `MCPWindow`, `RagSession` e `Simulator`. A instrumentação é opcional e o fluxo de terminal continua disponível sem o extra `ui`. A preparação calcula as detecções internamente. O diário, o agente e as ferramentas MCP recebem apenas a janela autorizada ou histórico anterior. O tempo de detector publicado foi medido na preparação e inclui a obtenção da janela no replay.
+`ui_runs.py` executa pré-verificação, persistência e controle por fronteira de janela. `ui_resources.py` armazena versões e verifica identidades. `ui_experiments.py` prepara o plano e executa sessões independentes em um processo separado. Ambos reutilizam o agente, MCP, RAG e simulador. O diário, o agente e as ferramentas MCP recebem apenas a janela autorizada ou histórico anterior. O tempo do detector operacional foi medido na preparação e inclui a obtenção da janela no replay.
 
 Cada execução tem um diretório `results/ui/<id>/` com manifesto de configuração, revisão, versões, hashes e digests. O worker grava eventos numerados, estado, pedidos de controle e log. Conclusão e interrupção segura produzem `resultados.json` e `relatorio.md`. Uma falha preserva os eventos e, quando há janelas concluídas, `parcial.json`. O worker não reenvia inferências de uma execução encerrada. Uma trava de processo limita a uma execução operacional ativa, e a chave da submissão torna reruns idempotentes. Abrir a interface novamente permite acompanhar o mesmo worker. Alterações na configuração criam uma nova execução.
 
-A Etapa 7.1.2 está reservada ao gerenciamento de recursos e experimentos. A Etapa 7.1.3 está reservada aos resultados, avaliação científica e modo de apresentação. Os resultados da Etapa 7 ficam em `results/etapa7/` e seguem o [protocolo congelado](EXPERIMENTOS.md).
+Comparações configuráveis ficam em `results/ui/experimentos/<id>/`. As fontes e presets em `data/ui/` e as saídas em `results/` são locais e ignorados pelo Git. Uma trava de processo coordena operações da interface que alteram modelos, constroem índices ou usam recursos de execução. Controle por ferramentas externas ao laboratório fica fora dessa trava. O worker verifica novamente a identidade antes de usar os recursos. A Etapa 7.1.3 cobre reprodução visual de eventos gravados, comparação de resultados, avaliação científica e modo de apresentação. O [protocolo congelado](EXPERIMENTOS.md) permanece em `results/etapa7/`.
 
 ## Demonstrações locais
 
@@ -75,4 +100,13 @@ As demonstrações usaram Windows 11, Python 3.13.0 e Ollama 0.40.18. Ambas usar
 
 Na execução E, uma leitura concorrente impediu a publicação do status final no Windows. O diário registra a falha e preserva todas as janelas e o resultado produzido. A atualização de status agora repete substituições temporariamente bloqueadas. Um teste injeta a falha e confirma a publicação da conclusão. Uma revalidação Python em `b4d7aeb80a054d2baf250d7df9bb2e0c` concluiu oito janelas sob leitura concorrente. As quatro chamadas ao modelo foram preservadas como evidência.
 
-A suíte padrão teve 160 testes aprovados e dois opcionais ignorados, incluindo Streamlit AppTest e os testes do worker. O `pip check` passou. As capturas das quatro páginas estão em `results/ui/capturas/`. A nova matriz GitHub inclui o extra `ui` e usa fixtures sem depender de Ollama ou do dataset. A validação desta revisão na matriz permanece pendente.
+A suíte padrão teve 160 testes aprovados e dois opcionais ignorados, incluindo Streamlit AppTest e os testes do worker. O `pip check` passou. As capturas das quatro páginas estão em `results/ui/capturas/`. A matriz inclui o extra `ui` e usa fixtures sem depender de Ollama ou do dataset.
+
+### Etapa 7.1.2 no Windows
+
+| Demonstração | ID | Observação |
+| --- | --- | --- |
+| Experimento A controlado | `b7bddd797cdb402299abbb5966019d77` | Uma sessão na janela 5, zero chamadas e relatórios gerados. |
+| Operação E · Qwen, MCP e RAG | `6a0903d843de48b18b700d996a1a3723` | Oito janelas e quatro chamadas de chat. Dois trechos apresentados em cada janela com inferência. A proposta da janela 5 foi recusada e Python registrou o alerta. Na janela 6, a decisão do modelo foi aceita sem mudança. |
+
+O status final de E foi observado após 6.022 leituras em um segundo monitor. A primeira consulta encontrou uma violação transitória de compartilhamento no leitor Windows. O helper de leitura de status agora repete essa operação e tem teste de regressão. As capturas das nove páginas ficam em `results/ui/capturas/etapa7.1.2/`.
