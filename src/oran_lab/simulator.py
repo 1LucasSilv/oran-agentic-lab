@@ -72,6 +72,7 @@ class Simulator:
         }
         self._history = []
         self._lock = Lock()
+        self.emit = None
 
     def state(self) -> dict:
         return deepcopy(self._state)
@@ -266,14 +267,19 @@ class Simulator:
             return self._apply(proposal, origin, window_id)
 
     def _apply(self, proposal, origin: str, window_id: int | None) -> dict:
+        from .events import stage
+
         # Normaliza propostas externas para que até as recusadas permaneçam serializáveis.
-        try:
-            proposal = json.loads(json.dumps(proposal, allow_nan=False))
-        except (TypeError, ValueError, OverflowError):
-            proposal = None
-            validation = Validation("Proposta deve ser serializável como JSON")
-        else:
-            validation = self.validate(proposal, window_id, scoped=origin in ("ollama", "cliente_mcp"))
+        with stage(self.emit, "validacao", origem=origin) as outcome:
+            try:
+                proposal = json.loads(json.dumps(proposal, allow_nan=False))
+            except (TypeError, ValueError, OverflowError):
+                proposal = None
+                validation = Validation("Proposta deve ser serializável como JSON")
+            else:
+                validation = self.validate(proposal, window_id, scoped=origin in ("ollama", "cliente_mcp"))
+            outcome.update(estado="concluida" if validation.accepted else "recusada",
+                           motivo=validation.reason, proposta=proposal)
         before = self.state()
         execution = {"estado": "nao_executada", "justificativa": validation.reason}
         verification = {"estado": "nao_aplicavel", "justificativa": "Proposta recusada"}
@@ -283,13 +289,18 @@ class Simulator:
         detection = self._detections.get(window_id) if type(window_id) is int else None
         if validation.accepted and not validation.changes_state:
             verification = {"estado": "aprovada", "justificativa": "Estado operacional permaneceu igual"}
+            if self.emit:
+                self.emit("execucao", "dispensada", execution)
+                self.emit("verificacao", "concluida", verification)
         elif validation.accepted:
             candidate = deepcopy(before)
             try:
-                self._execute(candidate, action, params, detection)
-                if not self._verify(before, candidate, action, params, detection):
-                    raise RuntimeError("A alteração observada diverge da ação validada")
-                json.dumps(candidate, allow_nan=False)
+                with stage(self.emit, "execucao", acao=action, origem=origin):
+                    self._execute(candidate, action, params, detection)
+                with stage(self.emit, "verificacao", acao=action, origem=origin):
+                    if not self._verify(before, candidate, action, params, detection):
+                        raise RuntimeError("A alteração observada diverge da ação validada")
+                    json.dumps(candidate, allow_nan=False)
             except Exception as error:
                 reason = f"{type(error).__name__}: {error}"
                 execution = {"estado": "falha", "justificativa": reason}
@@ -298,6 +309,9 @@ class Simulator:
                 self._state = candidate
                 execution = {"estado": "executada", "justificativa": "Alteração aplicada ao simulador"}
                 verification = {"estado": "aprovada", "justificativa": "Alteração esperada observada"}
+        elif self.emit:
+            self.emit("execucao", "dispensada", execution)
+            self.emit("verificacao", "dispensada", verification)
         after = self.state()
         event_id = params.get("evento_id") if isinstance(params, dict) else None
         if not isinstance(event_id, str):

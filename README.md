@@ -227,6 +227,15 @@ O piloto tem teto de 12 chamadas de chat e casos próprios. O plano final contro
 
 ## Resultados e próximos marcos
 
+### Interface local
+
+```sh
+python -m pip install -e ".[ui]"
+oran-ui
+```
+
+Abra `http://127.0.0.1:8501`. A Etapa 7.1.1 oferece configuração exploratória, monitoramento por janela e inspeção do agente. Use `.[ui,mcp,rag]` para incluir os modos com MCP e RAG. [Instalação, controles e armazenamento](docs/INTERFACE.md)
+
 | Comando | Saída padrão |
 | --- | --- |
 | `oran-eda` | `results/eda/`, com relatório Markdown e gráficos PNG |
@@ -237,9 +246,10 @@ O piloto tem teto de 12 chamadas de chat e casos próprios. O plano final contro
 | `python -m oran_lab.mcp_client` | `results/etapa5/stdio.json` |
 | `oran-loop --modo ollama --rag` | `results/etapa6/ollama-rag/<origem>/` ou `results/etapa6/ollama-mcp-rag/<origem>/` com MCP |
 | `oran-experiment` | `results/etapa7/<execucao>/` para planos, eventos brutos, relatórios e avaliações |
+| `oran-ui` | `results/ui/<id>/` para manifestos, eventos, resultados e recuperação parcial |
 
 O replay e o loop escrevem `resultados.json` e `relatorio.md`. Use `--saida` para preservar cada execução, com diretórios distintos por sistema e configuração. Dados brutos, ambientes e saídas locais ficam fora do Git.
 
 Na execução oficial de referência no Linux, o detector produziu 38 janelas sobre 1.138 registros KPM e zero alertas. O cenário sintético permitiu verificar ações e recusas do simulador. Os experimentos com Ollama e MCP demonstraram propostas, consultas e fallback. Esses resultados descrevem os casos executados. Novas medições dependem do modelo, do runtime e do hardware. [Replay](docs/REPLAY_DETECCAO.md) · [Simulador](docs/ACAO_SIMULADA.md) · [Agente Ollama](docs/AGENTE_OLLAMA.md) · [MCP](docs/MCP.md)
 
-As Etapas 0 a 6 estão aprovadas, incluindo a preparação reproduzível da Etapa 5.1. A bateria controlada da Etapa 7 concluiu 90 sessões, com avaliação humana pendente. A interface web local da Etapa 7.1 é uma proposta futura. [Resultados da Etapa 7](docs/EXPERIMENTOS.md#bateria-controlada-final) · [Plano técnico](docs/PLANO_LABORATORIO.md) · [Status](docs/STATUS_PROJETO.md) · [Auditoria da planilha](docs/EDA.md) · [Instalação avançada](docs/INSTALACAO.md)
+As Etapas 0 a 6 estão aprovadas, incluindo a preparação reproduzível da Etapa 5.1. A bateria controlada da Etapa 7 concluiu 90 sessões, com avaliação humana pendente. A Etapa 7.1.1 entrega a interface base. Gerenciamento de recursos e experimentos, avaliação científica e apresentação ficam para as próximas subetapas. [Resultados da Etapa 7](docs/EXPERIMENTOS.md#bateria-controlada-final) · [Plano técnico](docs/PLANO_LABORATORIO.md) · [Status](docs/STATUS_PROJETO.md) · [Auditoria da planilha](docs/EDA.md) · [Instalação avançada](docs/INSTALACAO.md)

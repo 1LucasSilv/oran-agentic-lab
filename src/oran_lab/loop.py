@@ -9,6 +9,7 @@ from importlib.metadata import version
 from math import isfinite
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from time import perf_counter
 from zipfile import BadZipFile
 
 import pandas as pd
@@ -16,6 +17,7 @@ import pandas as pd
 from .data import KPM, OFFICIAL_SHA256
 from .agent import AgentConfig, AgentSession
 from .detector import INSUFFICIENT, NORMAL, PRB, SUSPECT, THROUGHPUT, DetectorConfig, detect
+from .events import stage
 from .replay import ReplayConfig, load_kpm
 from .simulator import EXPAND, INTENSIFY, NO_ACTION, PRIORITIZE, REGISTER_ALERT, Limits, Simulator
 
@@ -68,9 +70,24 @@ def _controlled_actions(simulator: Simulator):
 def run_loop(frame: pd.DataFrame, source: dict, replay_config: ReplayConfig = ReplayConfig(),
              detector_config: DetectorConfig = DetectorConfig(), limits: Limits = Limits(),
              *, controlled: bool = False, agent_config: AgentConfig | None = None, client=None,
-             mcp_reads: int | None = None, mcp_timeout: float = 5, rag=None) -> dict:
+             mcp_reads: int | None = None, mcp_timeout: float = 5, rag=None,
+             on_event=None, before_window=None) -> dict:
     """Executa o detector, aplica a política e devolve a trilha e o estado serializáveis."""
-    detections = list(detect(frame, replay_config, detector_config))
+    timings = []
+    if on_event is None:
+        detections = list(detect(frame, replay_config, detector_config))
+    else:
+        def setup(component, status, payload):
+            on_event(component, status, None, payload)
+
+        detections = []
+        with stage(setup, "preparacao") as preparation:
+            started = perf_counter()
+            for detection in detect(frame, replay_config, detector_config):
+                detections.append(detection)
+                timings.append(perf_counter() - started)
+                started = perf_counter()
+            preparation["total_janelas"] = len(detections)
     simulator = Simulator(frame, detections, replay_config.advance, limits)
     initial = simulator.state()
     if controlled and agent_config:
@@ -85,15 +102,47 @@ def run_loop(frame: pd.DataFrame, source: dict, replay_config: ReplayConfig = Re
             raise ValueError("Timeout MCP deve ser positivo e finito")
         from .mcp_client import MCPWindow
         catalog = {d["janela"]["id"]: d for d in detections}
+    completed = []
     for detection in detections:
+        window_id = detection["janela"]["id"]
+        if before_window is not None and not before_window(window_id, len(detections)):
+            break
+        if on_event is not None:
+            def emit(component, status, payload):
+                on_event(component, status, window_id, payload)
+
+            with stage(emit, "replay") as current:
+                # A linha 2 do Excel é o primeiro registro do DataFrame.
+                end = detection["janela"]["ultima_linha_excel"] - 1
+                first = detection["janela"]["primeira_linha_excel"] - 2
+                points = frame.iloc[first:end].reindex(columns=["Register", THROUGHPUT, PRB])
+                points = points.apply(pd.to_numeric, errors="coerce")
+                current.update(janela=detection["janela"], pontos=json.loads(points.to_json(orient="records")))
+            emit("detector", "iniciada", {})
+            emit("detector", "concluida", {"deteccao": detection, "tempo_s": timings[len(completed)]})
+            simulator.emit = emit
+            offset = len(simulator.history())
+            if agent:
+                agent.emit = emit
         if agent:
-            window = (MCPWindow(simulator, frame, catalog, detection["janela"]["id"], mcp_reads, mcp_timeout)
-                      if mcp_reads is not None else None)
+            window = None
+            if mcp_reads is not None:
+                if on_event is None:
+                    window = MCPWindow(simulator, frame, catalog, window_id, mcp_reads, mcp_timeout)
+                else:
+                    visible = {i: item for i, item in catalog.items() if i <= window_id}
+                    window = MCPWindow(simulator, frame.iloc[:end], visible, window_id, mcp_reads, mcp_timeout,
+                                       emit=emit)
             agent.decide(detection, simulator, propose, window)
         else:
-            simulator.apply(propose(detection), window_id=detection["janela"]["id"],
-                            origin="politica_deterministica")
-    if controlled:
+            simulator.apply(propose(detection), window_id=window_id, origin="politica_deterministica")
+        completed.append(detection)
+        if on_event is not None:
+            emit("janela", "concluida", {"estado_simulador": simulator.state(),
+                                        "historico": simulator.history()[offset:],
+                                        "agente": agent.decisions[-1] if agent else None})
+    if controlled and len(completed) == len(detections):
+        simulator.emit = None
         _controlled_actions(simulator)
     return {
         **({"agente": agent.report()} if agent else {}),
@@ -110,7 +159,7 @@ def run_loop(frame: pd.DataFrame, source: dict, replay_config: ReplayConfig = Re
         },
         "detector": asdict(detector_config),
         "limites": asdict(limits),
-        "deteccoes": detections,
+        "deteccoes": completed,
         "simulador": {
             "estado_inicial": initial, "estado_final": simulator.state(), "historico": simulator.history(),
         },

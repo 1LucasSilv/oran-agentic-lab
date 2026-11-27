@@ -62,15 +62,24 @@ def parse_read(raw):
 
 
 class MCPWindow:
-    def __init__(self, simulator, frame, detections, window_id, max_reads, timeout):
+    def __init__(self, simulator, frame, detections, window_id, max_reads, timeout, *, emit=None):
         self.simulator = simulator
         self.args = (simulator, frame, detections, window_id)
         self.server = create_server(*self.args, max_reads=max_reads, origin="ollama")
         self.timeout = timeout
         self.max_reads = max_reads
+        self.emit = emit
         self.audit = {"ferramentas": [], "catalogo": None, "prompt_selecao": READ_PROMPT, "schema_selecao": READ_SCHEMA}
 
     def _request(self, server, name=None, params=None):
+        from .events import stage
+
+        with stage(self.emit, "mcp", ferramenta=name, parametros=params) as outcome:
+            result = self._perform_request(server, name, params)
+            outcome["resultado"] = result
+            return result
+
+    def _perform_request(self, server, name, params):
         async def request():
             async with asyncio.timeout(self.timeout):
                 async with Client(server, read_timeout_seconds=self.timeout) as client:

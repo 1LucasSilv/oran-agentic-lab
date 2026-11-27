@@ -20,7 +20,9 @@ Atualizado em 27 de novembro de 2026.
 | 5.1 | Implementada e validada localmente no Windows. Suíte padrão aprovada nos três runners do GitHub Actions. Documentação de armazenamento e desinstalação disponível. |
 | 6 | Aprovada. RAG 3GPP demonstrado localmente no Windows e suíte padrão aprovada na matriz GitHub. |
 | 7 | Bateria controlada final executada e consolidada. Avaliação humana pendente. |
-| 7.1 | Proposta futura de interface web local para acompanhar e gerenciar o laboratório. |
+| 7.1.1 | Interface local, configuração, monitoramento e inspeção do agente implementados. |
+| 7.1.2 | Gerenciamento de recursos e experimentos. Aguarda autorização. |
+| 7.1.3 | Resultados, avaliação científica e modo de apresentação. Aguarda autorização. |
 
 ## Implementação e decisões
 
@@ -91,10 +93,16 @@ Após os ajustes pré-bateria, a suíte padrão local teve 152 testes aprovados 
 
 A bateria final em `results/etapa7/final-revisao-definitiva/` concluiu **90 sessões com 108 chamadas únicas e 108 retornos HTTP 200**. Houve 15 propostas originais concordantes em 72 oportunidades do modelo, 56 recusas, uma resposta incompleta e 57 fallbacks. As 90 decisões finais concordaram com o protocolo. As 30 mudanças verificadas no simulador vieram de 15 decisões do modelo, 9 fallbacks e 6 decisões da referência Python. A consolidação preserva os resultados por configuração, cenário e semente. [Resultados e limitações](EXPERIMENTOS.md#bateria-controlada-final)
 
+### Etapa 7.1.1 no Windows
+
+A interface abriu em 127.0.0.1:8501. O worker Python verificou pausa, avanço e continuação e concluiu oito janelas. O worker com Qwen, MCP e RAG gravou oito janelas e quatro chamadas HTTP 200. A demonstração preservou o resultado completo e registrou um bloqueio concorrente ao publicar o status final. O teste de regressão cobre a tentativa adicional de publicação. A revisão local preservou o manifesto e as 108 reservas da bateria científica. [Interface e evidências](INTERFACE.md#demonstrações-locais)
+
+A revalidação Python publicou a conclusão sob leitura concorrente. A suíte padrão local teve 160 aprovados e dois opcionais ignorados. O `pip check` passou e as quatro páginas foram capturadas. A validação desta revisão na matriz GitHub permanece pendente.
+
 ## Limitações e pendências
 
 - As integrações opcionais com Ollama e MCP stdio têm evidência local no Windows para a Etapa 5.1. A execução do GitHub Actions cobre a suíte padrão.
 - O detector sinaliza padrões heurísticos. A planilha carece de rótulos de falha e de denominador para interpretar PRB como percentual. A semântica temporal de `Latency` segue indeterminada.
 - Os efeitos verificados pertencem ao simulador. O desenho controlado usa seis cenários sintéticos e repetições técnicas. Tempos de inferência dependem de runtime, modelo, cache e hardware.
 - A avaliação humana das 89 respostas exportadas permanece pendente.
-- A futura interface da Etapa 7.1 está especificada e depende de autorização para implementação. [Plano técnico](PLANO_LABORATORIO.md#etapa-71--requisitos-futuros-da-interface-web-local)
+- As entregas de gerenciamento, avaliação científica e apresentação dependem da autorização das Etapas 7.1.2 e 7.1.3. [Plano técnico](PLANO_LABORATORIO.md#etapa-71--requisitos-da-interface-web-local)

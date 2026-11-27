@@ -8,6 +8,7 @@ from http.client import HTTPException
 from time import perf_counter
 
 from .detector import SUSPECT
+from .events import stage
 from .ollama import AgentConfig, OllamaClient, strict_json
 from .simulator import ACTION_PARAMETERS, NO_ACTION, PRIORITIES, REGISTER_ALERT
 
@@ -139,6 +140,7 @@ class AgentSession:
         self.metadata = self.client.metadata()
         self.rag = rag
         self.experiment = experiment
+        self.emit = None
 
     def _skip(self, detection):
         if self.config.selection == "suspeitas" and detection["situacao"] != SUSPECT:
@@ -150,12 +152,20 @@ class AgentSession:
         return None
 
     def _infer(self, schema, system, context, audit):
+        with stage(self.emit, "inferencia") as outcome:
+            content = self._request_inference(schema, system, context, audit)
+            if self.emit:
+                audit["resposta_modelo"] = content
+                outcome.update(http=audit.get("status_http"), tokens=audit.get("metricas_ollama"))
+            return content
+
+    def _request_inference(self, schema, system, context, audit):
         config = self.config
         options = {k: getattr(config, k) for k in ("temperature", "num_ctx", "num_predict")}
         if config.seed is not None:
             options["seed"] = config.seed
         user = json.dumps(context, ensure_ascii=False)
-        if self.rag is not None or self.experiment:
+        if self.rag is not None or self.experiment or self.emit:
             from .rag import CHAT_RESERVE
 
             input_size = len(system.encode("utf-8")) + len(user.encode("utf-8"))
@@ -200,10 +210,15 @@ class AgentSession:
             return parse_proposal(self._infer(SCHEMA, SYSTEM_PROMPT, context, audit))
         from .rag import RAG_PROMPT, budget_context
 
-        retrieval = self.rag.retrieve(detection) if self.rag is not None else {
-            "recuperados": [], "referencias_apresentadas": [], "referencias_citadas": None,
-            "estado": "desabilitado",
-        }
+        if self.rag is not None:
+            with stage(self.emit, "rag") as outcome:
+                retrieval = self.rag.retrieve(detection)
+                outcome.update(estado="falha" if retrieval.get("erro") else "concluida",
+                               resultado=retrieval["estado"], erro=retrieval.get("erro"),
+                               recuperados=len(retrieval["recuperados"]))
+        else:
+            retrieval = {"recuperados": [], "referencias_apresentadas": [], "referencias_citadas": None,
+                         "estado": "desabilitado"}
         if self.rag is not None:
             audit["rag"] = retrieval
         system = EXPERIMENT_PROMPT if self.experiment else f"{SYSTEM_PROMPT}\n\n{RAG_PROMPT}"
@@ -289,14 +304,17 @@ class AgentSession:
             if audit["erro"] or skip == "circuito_aberto":
                 origin = "fallback_python"
                 audit["fallback"] = proposal
-            try:
-                entry = (mcp.apply(proposal, origin) if mcp
-                         else simulator.apply(proposal, origin=origin, window_id=window_id))
-            except ValueError as error:
-                audit["erro"] = audit["erro"] or str(error)
-                proposal = {"acao": NO_ACTION, "parametros": {}, "justificativa": "Canal de ação MCP indisponível"}
-                audit["fallback"] = proposal
-                entry = simulator.apply(proposal, origin="fallback_python", window_id=window_id)
+            with stage(self.emit if audit["fallback"] else None, "fallback", motivo=audit["erro"] or skip) as outcome:
+                try:
+                    entry = (mcp.apply(proposal, origin) if mcp
+                             else simulator.apply(proposal, origin=origin, window_id=window_id))
+                except ValueError as error:
+                    audit["erro"] = audit["erro"] or str(error)
+                    proposal = {"acao": NO_ACTION, "parametros": {}, "justificativa": "Canal de ação MCP indisponível"}
+                    audit["fallback"] = proposal
+                    with stage(self.emit if origin != "fallback_python" else None, "fallback", motivo=str(error)):
+                        entry = simulator.apply(proposal, origin="fallback_python", window_id=window_id)
+                outcome.update(decisao=entry["proposta"], execucao=entry["execucao"]["estado"])
         audit.update(historico_final=entry["id"], origem_decisao_final=entry["origem"],
                      origem_execucao=entry["origem"] if entry["execucao"]["estado"] == "executada" else None,
                      tempo_decisao_s=perf_counter() - start)

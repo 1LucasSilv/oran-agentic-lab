@@ -143,7 +143,9 @@ Ação inicial recomendada: **ampliar a janela de análise** após alerta persis
 | **5.1. Portabilidade e reprodutibilidade** | README autossuficiente, scripts de preparação, diagnóstico e CI | Dataset com revisão e SHA-256, scripts e suíte validados localmente, workflow preparado para Ubuntu, Windows e macOS, evidências por sistema no status | `chore: melhora portabilidade e reprodutibilidade do laboratorio` |
 | **6. RAG 3GPP** | Corpus verificado, índice cosseno local e contexto documental opcional com ou sem MCP | Respostas identificam referências apresentadas por versão, seção e página. A falta de contexto e citações inválidas são auditadas. | `feat: adiciona consulta rag a normas 3gpp` |
 | **7. Comparação** | Protocolo A–E, decisão controlada e ciclo completo, piloto, auditoria e revisão humana | Casos congelados, orçamento auditável, piloto e plano final documentados | `feat: adiciona avaliacao experimental reproduzivel` |
-| **7.1. Interface gráfica (proposta futura)** | Interface web local para replay, acompanhamento de eventos e gerenciamento de experimentos | Consumir funções e eventos da Etapa 7 com identificadores e parâmetros preservados | A definir após autorização |
+| **7.1.1. Interface base, configuração e monitoramento** | Streamlit e Plotly em loopback, com worker local e inspeção do agente | Configuração imutável, controles por janela e eventos de execução local verificáveis | `feat: adiciona interface operacional local` |
+| **7.1.2. Gerenciamento de recursos e experimentos** | Gerenciar recursos, presets e experimentos pela interface | Novas execuções preservam os protocolos e manifestos existentes | A definir após autorização |
+| **7.1.3. Resultados, avaliação científica e modo de apresentação** | Consultar resultados, avaliação e apresentação | Relatórios e avaliações humanas identificados por execução | A definir após autorização |
 | **8. Consolidação** | Relatório curto, gráficos, documentação e instruções de reprodução | Terceiro consegue reproduzir o fluxo com dados disponíveis | `docs: consolida resultados do laboratorio` |
 
 ### Marco de entrega prioritário (MVP)
@@ -171,7 +173,7 @@ O protocolo avalia propostas originais e decisões finais em modo controlado e e
 - Acurácia/F1-score só com **verdade de referência independente e válida**; avaliação por especialista deve ser explicitada como tal.
 - Não assumir que RAG sempre melhora a resposta ou que maior modelo será mais adequado ao hardware.
 
-### Etapa 7.1 — Requisitos futuros da interface web local
+### Etapa 7.1 — Requisitos da interface web local
 
 - Selecionar dinamicamente os modelos instalados no Ollama e configurar MCP e RAG de forma independente.
 - Alterar parâmetros de inferência, replay, detector e simulador entre execuções.
@@ -180,7 +182,7 @@ O protocolo avalia propostas originais e decisões finais em modo controlado e e
 - Oferecer modos de apresentação, exploração e avaliação científica.
 - Preservar identificadores de execução, manifestos e configurações científicas. Novos experimentos terão suas próprias configurações e manifestos. O protocolo da bateria controlada atual permanece preservado.
 
-O planejamento da interface fica sujeito a autorização específica de implementação.
+A Etapa 7.1.1 cobre configuração operacional, monitoramento e inspeção. Consulte o [guia da interface](INTERFACE.md). As demais entregas pertencem às Etapas 7.1.2 e 7.1.3 e dependem de autorização específica.
 
 ## 8. Ferramentas, dependências e recursos
 
