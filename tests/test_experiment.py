@@ -8,7 +8,9 @@ import pytest
 
 from oran_lab.agent import EXPERIMENT_PROMPT, parse_grounded_proposal
 from oran_lab.detector import NORMAL
-from oran_lab.experiment import ExperimentConfig, build_plan, read_json, run_experiment
+from oran_lab.experiment import (
+    ExperimentConfig, atomic_json, build_plan, preflight_resources, read_json, run_experiment, save_plan,
+)
 from oran_lab.experiment_cases import FINAL_CASES, PILOT_CASES, detections_for
 from oran_lab.experiment_report import RUBRIC, aggregate, flatten, import_reviews, read_experiment
 
@@ -133,6 +135,7 @@ def test_communication_failure_records_original_absence_and_fallback(tmp_path):
     directory, _, _ = experiment(tmp_path, ("B",), mode="falha")
     row = flatten(*next(read_experiment(directory))[:5])
     assert row["chat_falha_comunicacao"] == 1 and row["proposta_modelo_ausente"]
+    assert row["fase_falha"] == "durante_execucao"
     assert row["fallback"] and row["concordancia_final"] and not row["concordancia_proposta"]
     assert not row["mudanca_modelo"]
 
@@ -169,12 +172,16 @@ def test_exports_and_imports_only_effective_human_scores(tmp_path):
     output = directory / "relatorios"
     assert result["oportunidades"] == result["avaliadas"] == 2
     assert (output / "resumo.png").is_file()
+    for file in ("concordancia_proposta", "concordancia_final", "recusa_modelo", "fallback", "custos_computacionais"):
+        assert (output / f"{file}.png").is_file()
     comparisons = read_json(output / "pareadas_por_caso.json")
     assert any(row["metrica"] == "concordancia_final" and row["n_pares_janela_semente"] == 1 for row in comparisons)
     template = output / "avaliacao-cega.csv"
     with template.open(encoding="utf-8-sig", newline="") as stream:
         rows = list(csv.DictReader(stream))
     assert rows and all("configuracao" not in row and all(row[key] == "" for key in RUBRIC) for row in rows)
+    assert all(not json.loads(row["estado_inicial"])["eventos"] for row in rows)
+    assert all(set(json.loads(row["acoes_disponiveis"])) == {"registrar_alerta", "nenhuma_acao"} for row in rows)
     with pytest.raises(ValueError, match="ainda"):
         import_reviews(directory, template)
     rows[0][RUBRIC[0]] = "2"
@@ -183,7 +190,17 @@ def test_exports_and_imports_only_effective_human_scores(tmp_path):
         writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
-    assert import_reviews(directory, filled)["avaliacoes"] == 1
+    with pytest.raises(ValueError, match="avaliador"):
+        import_reviews(directory, filled)
+    assert import_reviews(directory, filled, evaluator="rev-01")["avaliacoes"] == 1
+    assert import_reviews(directory, filled, evaluator="rev-01")["avaliacoes"] == 1
+    assert import_reviews(directory, filled, evaluator="rev-02")["avaliacoes"] == 1
+    summary = read_json(output / "avaliacoes_consolidadas.json")
+    assert summary["avaliadores_identificados"] == ["rev-01", "rev-02"]
+    pool = [r for r in summary["criterios"] if r["escopo"] == "todos" and r["configuracao"] == "todas"]
+    assert (pool[0]["n_previstas"], pool[0]["n_pontuadas"], pool[0]["n_ausentes"]) == (4, 2, 2)
+    assert (pool[0]["n_2"], pool[0]["media"]) == (2, 2)
+    assert pool[-1]["grupo"] == "documental" and pool[-1]["n_previstas"] == 0 and pool[-1]["media"] is None
 
 
 def test_justification_limit_validated_outside_simulator():
@@ -192,3 +209,81 @@ def test_justification_limit_validated_outside_simulator():
         parse_grounded_proposal(json.dumps(value), [], {})
     value["justificativa"] = "á" * 300
     assert "referencias" not in parse_grounded_proposal(json.dumps(value), [], {})
+
+
+def test_final_preflight_blocks_missing_generator_before_creating_any_session(tmp_path):
+    config = ExperimentConfig(phase="final", cases=("estavel",), configurations=("B",))
+    directory = tmp_path / "final"
+    save_plan(config, directory)
+    calls = []
+    with pytest.raises(ValueError, match="bloqueada: ollama, gerador"):
+        run_experiment(config, directory, authorize_final=True,
+                       client_factory=lambda opts: FixtureClient(opts, calls))
+    assert calls == [] and not (directory / "manifesto.json").exists()
+    report = read_json(next((directory / "pre-verificacoes").glob("*.json")))
+    assert report["estado"] == "bloqueada" and report["fase"] == "pre_execucao"
+    assert set(report["verificacoes"]) == {"ollama", "gerador"}
+
+
+def test_stale_final_plan_rejects_changed_git_revision_and_preserves_file(tmp_path, monkeypatch):
+    config = ExperimentConfig(phase="final", cases=("estavel",), configurations=("B",))
+    directory = tmp_path / "final"
+    plan = save_plan(config, directory)
+    monkeypatch.setattr("oran_lab.experiment.code_identity", lambda: {**plan["codigo"], "git": "outra-revisao"})
+    with pytest.raises(ValueError, match="revisão Git"):
+        run_experiment(config, directory, authorize_final=True,
+                       client_factory=lambda _: pytest.fail("O plano antigo deve bloquear a sondagem"))
+    assert read_json(directory / "plano.json") == plan
+
+
+def test_preflight_conditionally_checks_index_and_embeddings(tmp_path):
+    config = ExperimentConfig(phase="final", configurations=("C",), index=tmp_path / "indice.json")
+    config.index.write_bytes(b"fixture")
+    from oran_lab.dataset import dataset_digest
+
+    digest = "b" * 64
+    embedding = {"modelo": "embeddinggemma:latest", "digest": digest}
+    resources = {"gerador": {"ollama": "fixture", "digest": "a" * 64}, "embeddings": embedding,
+                 "rag": {"indice_sha256": "c" * 64, "indexacao": embedding.copy()}}
+    plan = {"indice_arquivo_sha256": dataset_digest(config.index)}
+    assert all(check["ok"] for check in preflight_resources(config, plan, resources).values())
+    resources["rag"]["indexacao"]["digest"] = "d" * 64
+    assert not preflight_resources(config, plan, resources)["indice_rag"]["ok"]
+    config.index.unlink()
+    assert not preflight_resources(config, plan, resources)["indice_rag"]["ok"]
+    assert preflight_resources(ExperimentConfig(phase="final", configurations=("A",)), {}, {}) == {}
+
+
+def test_report_distinguishes_zero_measured_from_absent(tmp_path):
+    pytest.importorskip("mcp")
+    directory, _, _ = experiment(tmp_path, ("E",))
+    job, window, event, chats, execution, _ = next(read_experiment(directory))
+    measured = flatten(job, window, event, chats, execution)
+    assert measured["tempo_consultas_mcp_s"] >= 0 and measured["entrada_embeddings_tokens"] is None
+    read = next(tool for tool in event["agente"]["mcp"]["ferramentas"] if tool["nome"] == "consultar_historico")
+    read["tempo_s"] = 0
+    event["agente"]["rag"]["metricas_embeddings"] = {"prompt_eval_count": 0}
+    zero = flatten(job, window, event, chats, execution)
+    assert zero["tempo_consultas_mcp_s"] == 0 and zero["entrada_embeddings_tokens"] == 0
+    read.pop("tempo_s")
+    assert flatten(job, window, event, chats, execution)["tempo_consultas_mcp_s"] is None
+
+
+def test_review_consolidation_limits_documental_denominator_and_preserves_nonblank_scores(tmp_path):
+    from oran_lab.experiment_report import consolidate_reviews
+
+    output = tmp_path / "relatorios"
+    atomic_json(output / "chave-avaliacao-local.json",
+                {"x": {"configuracao": "B"}, "y": {"configuracao": "C"}})
+    atomic_json(output / "avaliacao-referencias.json", [{"id": "y"}])
+    for i, scores in enumerate(({"fidelidade_kpm": 0, "suporte_referencias": 2},
+                                {"fidelidade_kpm": 1, "suporte_referencias": None})):
+        atomic_json(tmp_path / "avaliacoes" / f"{i}.json",
+                    {"data_utc": str(i), "avaliador": "rev",
+                     "avaliacoes": {"y": {"pontuacoes": scores}}})
+    consolidate_reviews(tmp_path, output)
+    summary = read_json(output / "avaliacoes_consolidadas.json")
+    pool = {r["criterio"]: r for r in summary["criterios"]
+            if r["escopo"] == "todos" and r["configuracao"] == "todas"}
+    assert pool["fidelidade_kpm"]["n_previstas"] == 2 and pool["fidelidade_kpm"]["media"] == 1
+    assert pool["suporte_referencias"]["n_previstas"] == 1 and pool["suporte_referencias"]["media"] == 2

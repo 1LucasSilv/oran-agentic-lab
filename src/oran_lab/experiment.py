@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import platform
+import re
 import subprocess
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
@@ -195,11 +196,60 @@ def environment(config, client_factory, rag_factory):
                "dependencias": dependency_versions()}
     variant = [CONFIGURATIONS[m] for m in config.configurations]
     if any(v["modelo"] for v in variant):
-        details["gerador"] = client_factory(agent_config(SEEDS[0], config.api)).metadata()
+        try:
+            details["gerador"] = client_factory(agent_config(SEEDS[0], config.api)).metadata()
+        except (RAG_ERRORS + (AttributeError, TypeError)) as error:
+            if config.phase != "final":
+                raise
+            details["gerador"] = {"erro": str(error)}
     if any(v["rag"] for v in variant):
-        rag = rag_factory(config)
-        details["rag"] = {k: v for k, v in rag.metadata.items() if k != "tempo_abertura_s"}
+        try:
+            rag = rag_factory(config)
+            details["rag"] = {k: v for k, v in rag.metadata.items() if k != "tempo_abertura_s"}
+        except (RAG_ERRORS + (AttributeError, TypeError)) as error:
+            if config.phase != "final":
+                raise
+            details["rag"] = {"erro_indice": str(error)}
+            details["embeddings"] = {"erro": str(error)}
+            return details
+        if config.phase == "final":
+            try:
+                details["embeddings"] = rag.embedder.identity()
+            except (RAG_ERRORS + (AttributeError, TypeError)) as error:
+                details["embeddings"] = {"erro": str(error)}
     return details
+
+
+def preflight_resources(config, plan, resources):
+    """Verifica o inventário local e o índice do plano sem fazer inferência."""
+    def valid_digest(value):
+        return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+    checks = {}
+    if "gerador" in resources:
+        model = resources["gerador"]
+        service = model.get("ollama")
+        checks["ollama"] = {"ok": isinstance(service, str) and bool(service.strip()), "versao": service}
+        checks["gerador"] = {"ok": valid_digest(model.get("digest")), "tag": agent_config(SEEDS[0], config.api).model,
+                             "digest": model.get("digest"), "erro": model.get("erro")}
+    if "rag" in resources:
+        embeddings = resources["embeddings"]
+        embedding_ok = embeddings.get("modelo") == f"{EMBED_MODEL}:latest" and valid_digest(embeddings.get("digest"))
+        checks["embeddings"] = {**embeddings, "ok": embedding_ok}
+        rag = resources["rag"]
+        try:
+            file_hash = dataset_digest(config.index)
+        except OSError as error:
+            file_hash = None
+            file_error = str(error)
+        else:
+            file_error = None if file_hash == plan.get("indice_arquivo_sha256") else "Arquivo difere do plano"
+        indexed = rag.get("indexacao") or {}
+        index_ok = (file_error is None and valid_digest(rag.get("indice_sha256")) and not rag.get("erro_indice")
+                    and embedding_ok and all(indexed.get(key) == embeddings[key] for key in ("modelo", "digest")))
+        checks["indice_rag"] = {"ok": index_ok, "arquivo_sha256": file_hash, "indice_sha256": rag.get("indice_sha256"),
+                                 "erro": file_error or rag.get("erro_indice")}
+    return checks
 
 
 def local_rag(config):
@@ -309,19 +359,34 @@ def run_experiment(config, directory, *, authorize_final=False, resume=False,
     if config.phase == "final" and not authorize_final:
         raise ValueError("A bateria final exige autorização explícita após revisão do plano")
     source = case_catalog(config.phase, config.excel) if catalog is None else catalog
-    plan = build_plan(config, source)
     cases = {c.id: c for c in source}
     with run_lock(directory):
         planned = directory / "plano.json"
         if config.phase == "final" and not planned.exists():
             raise ValueError("Salve o plano final nesta pasta antes de autorizar a execução")
-        if planned.exists() and read_json(planned) != plan:
-            raise ValueError("Plano diferente nesta pasta. Use outro identificador de execução")
         manifest_file = directory / "manifesto.json"
         old = read_json(manifest_file) if manifest_file.exists() else None
         if old is not None and not resume:
             raise ValueError("Execução existente. Use retomada ou uma pasta nova")
-        runtime = environment(config, client_factory, rag_factory)
+        saved_plan = read_json(planned) if planned.exists() else None
+        if config.phase == "final":
+            if saved_plan.get("codigo") != code_identity():
+                raise ValueError("Código ou revisão Git diferente do plano final. Preserve-o e planeje em outra pasta")
+            runtime = environment(config, client_factory, rag_factory)
+            checks = preflight_resources(config, saved_plan, runtime)
+            errors = [name for name, result in checks.items() if not result["ok"]]
+            atomic_json(directory / "pre-verificacoes" / f"{uuid4().hex}.json",
+                        {"data_utc": now(), "fase": "pre_retomada" if old else "pre_execucao",
+                         "plano_sha256": saved_plan.get("sha256"),
+                         "estado": "bloqueada" if errors else "aprovada", "verificacoes": checks})
+            if errors:
+                raise ValueError(f"Pré-verificação da bateria final bloqueada: {', '.join(errors)}. "
+                                 "Consulte pre-verificacoes/")
+        plan = build_plan(config, source)
+        if saved_plan is not None and saved_plan != plan:
+            raise ValueError("Plano diferente nesta pasta. Use outro identificador de execução")
+        if config.phase != "final":
+            runtime = environment(config, client_factory, rag_factory)
         if old is not None and (old["plano_sha256"] != plan["sha256"] or old["recursos"] != runtime):
             raise ValueError("Código, recursos ou parâmetros mudaram. Use uma nova pasta")
         if not planned.exists():
@@ -353,7 +418,7 @@ def run_experiment(config, directory, *, authorize_final=False, resume=False,
             try:
                 result = execute_job(job, cases[job["caso"]], config, factory, rag_factory, emit, resources=runtime)
             except RAG_ERRORS as error:
-                result = {"estado": "falha", "erro": f"{type(error).__name__}: {error}"}
+                result = {"estado": "falha", "fase_falha": "durante_execucao", "erro": f"{type(error).__name__}: {error}"}
             atomic_json(end, result)
         return {"pasta": str(directory), "chamadas_reservadas": ledger.used, "max_chat": config.max_calls}
 
@@ -387,6 +452,7 @@ def main(argv=None):
     parser.add_argument("--retomar", action="store_true")
     parser.add_argument("--autorizar-final", action="store_true")
     parser.add_argument("--avaliacoes", type=Path)
+    parser.add_argument("--avaliador", help="Identificador do avaliador para a importação")
     args = parser.parse_args(argv)
     if (args.operacao in ("agregar", "importar-avaliacoes") or args.retomar) and args.saida is None:
         parser.error("Informe --saida com a pasta do experimento")
@@ -397,7 +463,7 @@ def main(argv=None):
         elif args.operacao == "importar-avaliacoes":
             if args.avaliacoes is None:
                 parser.error("Informe --avaliacoes com o CSV preenchido")
-            result = import_reviews(directory, args.avaliacoes)
+            result = import_reviews(directory, args.avaliacoes, evaluator=args.avaliador)
         else:
             is_final = args.fase == "final"
             limit = args.limite_chamadas if args.limite_chamadas is not None else 108 if is_final else 12

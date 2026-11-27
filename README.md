@@ -2,6 +2,11 @@
 
 Laboratório educacional e de pesquisa sobre análise de KPMs históricos de uma rede 5G Open RAN experimental. O objetivo é verificar quais padrões merecem investigação por uma regra de referência, avaliar as propostas de um modelo local e medir o custo de introduzir o agente no ciclo de decisão. A planilha veio de uma coleta por xApp. O replay usa registros históricos, e as ações têm efeito apenas no simulador. A condição suspeita é um alerta heurístico, sem rótulo de falha comprovada.
 
+## Fases da pesquisa
+
+- **Fase I — IA Agêntica aplicada à análise e decisão em redes 5G O-RAN.** Prioritária e independente, abrange as Etapas 0 a 8, incluindo 5.1 e 7.1. Avalia conformidade operacional, capacidade investigativa, fundamentação técnica, segurança e custo computacional de agentes com MCP e RAG, com ações no simulador.
+- **Fase II — Controle e otimização de redes 5G O-RAN.** Expansão futura opcional, sujeita a autorização específica. As Etapas 9 a 14 abrangem rede experimental, coleta e congestionamento controlado, integração O-RAN, controle em malha fechada, experimentos de desempenho e consolidação ampliada. OpenAirInterface, RFSim, 5G Core e FlexRIC são candidatos sujeitos a avaliação de viabilidade. [Plano técnico](docs/PLANO_LABORATORIO.md)
+
 ## Arquitetura
 
 ```mermaid
@@ -218,7 +223,7 @@ oran-experiment executar --fase piloto --saida results/etapa7/meu-piloto
 oran-experiment agregar --saida results/etapa7/meu-piloto
 ```
 
-O piloto tem teto de 12 chamadas de chat e casos próprios. O plano final controlado usa seis casos distintos e até 108 chamadas. Prepare-o com `oran-experiment planejar --fase final` e revise-o antes de autorizar a execução. As saídas incluem auditorias, tabelas, gráfico e modelo para revisão humana em branco. [Protocolo e comandos](docs/EXPERIMENTOS.md)
+O piloto tem teto de 12 chamadas de chat e casos próprios. O plano final controlado usa seis casos distintos e até 108 chamadas. Gere-o com `oran-experiment planejar --fase final` após o commit definitivo e revise-o antes de autorizar a execução. As saídas incluem auditorias, tabelas, gráficos e modelo para revisão humana em branco. [Protocolo e comandos](docs/EXPERIMENTOS.md)
 
 ## Resultados e próximos marcos
 

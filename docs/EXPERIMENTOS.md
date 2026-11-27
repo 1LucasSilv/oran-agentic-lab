@@ -2,7 +2,7 @@
 
 ## Pergunta e condições
 
-O protocolo mede concordância com expectativas operacionais fixadas em casos sintéticos. A referência A permite observar o que a política determinística entrega. O contraste B/C investiga o efeito de fornecer contexto documental e B/D o de permitir consulta MCP. C/E e D/E ajudam a examinar a combinação. O estudo também registra o custo de cada configuração e as consequências das propostas no simulador.
+O protocolo mede concordância com expectativas operacionais fixadas em casos sintéticos. As expectativas representam conformidade com o protocolo do simulador. Rótulos independentes de falhas reais e evidência de superioridade da política Python exigiriam outra validação. A referência A permite observar o que a política determinística entrega. O contraste B/C investiga o efeito de fornecer contexto documental e B/D o de permitir consulta MCP. C/E e D/E ajudam a examinar a combinação. O estudo também registra o custo de cada configuração e as consequências das propostas no simulador.
 
 | Código | Configuração |
 | --- | --- |
@@ -56,10 +56,13 @@ Use `--configuracoes A B C D E`, `--casos`, `--repeticoes`, `--limite-chamadas` 
 ```sh
 oran-experiment planejar --fase exploratorio --saida results/etapa7/excel-planejado
 oran-experiment executar --fase exploratorio --configuracoes A --limite-chamadas 0 --saida results/etapa7/excel-python
-oran-experiment planejar --fase final --saida results/etapa7/final-planejado
 ```
 
-O plano controlado final prevê 90 sessões em seis casos e três sementes, com 18 sessões Python, 72 decisões finais de LLM e até 36 seleções MCP. O teto é **108 chamadas de chat**. O ciclo completo é um desenho separado. Com as mesmas seis séries e três sementes, o teto de chat é 648. Planeje e autorize cada desenho antes de executar. Após autorização da bateria controlada, use a mesma pasta e os mesmos parâmetros com `oran-experiment executar --fase final --autorizar-final --saida results/etapa7/final-planejado`.
+**Gere o plano final após o commit definitivo do código.** A identidade inclui a revisão Git e os hashes das fontes, portanto até um commit com as mesmas fontes altera a revisão esperada. Preserve planos anteriores e use uma pasta nova, por exemplo `oran-experiment planejar --fase final --saida results/etapa7/final-revisao-definitiva`.
+
+O plano controlado final prevê 90 sessões em seis casos e três sementes, com 18 sessões Python, 72 decisões finais de LLM e até 36 seleções MCP. O teto é **108 chamadas de chat**. O ciclo completo é um desenho separado. Com as mesmas seis séries e três sementes, o teto de chat é 648. Planeje e autorize cada desenho antes de executar. Após autorização da bateria controlada, use `oran-experiment executar --fase final --autorizar-final --saida results/etapa7/final-revisao-definitiva` com os mesmos parâmetros.
+
+A execução final e sua retomada exigem pré-verificação de recursos. B–E verificam a versão do serviço local Ollama e o digest do gerador. C e E também verificam a tag e o digest do modelo de embeddings e a integridade e compatibilidade do índice RAG com o modelo e o plano. A dispensa os recursos Ollama. A verificação consulta metadados e arquivos locais, sem inferência. Cada tentativa fica em `pre-verificacoes/`, identificada como `pre_execucao` ou `pre_retomada`. Indisponibilidade nessa verificação bloqueia novas sessões e não entra nas contagens experimentais. Problemas após o início ficam registrados nos eventos e resultados da sessão.
 
 Use `--retomar` com os mesmos argumentos e a pasta original. O executor preserva resultados concluídos, trava a pasta contra gravadores simultâneos e reserva cada chamada em disco antes do envio. Se um processo cair depois da reserva, a tentativa continua ocupando a cota. A sessão fica interrompida na retomada e nenhuma de suas chamadas é reenviada. Sessões ainda pendentes podem continuar. Se o teto restante for menor que a reserva máxima da próxima sessão, a execução para antes de iniciá-la. Use uma nova pasta quando alterar limite, seleção, recursos ou código. A CLI expõe as funções do módulo `experiment`, e os eventos persistidos podem ser consultados por programa independentemente do terminal.
 
@@ -71,7 +74,9 @@ Uma consulta MCP válida é marcada como útil nesta contagem quando acrescenta 
 
 As tabelas CSV/JSON mostram denominadores, médias, medianas, desvio-padrão e extremos. O resumo agrega primeiro por caso, com peso igual por caso, e reporta dispersão entre casos. Os contrastes pareiam por caso, janela e semente e mostram diferenças por caso. Repetições da mesma janela são repetições técnicas. As tabelas descrevem o cenário sem testes de significância ou métricas de classificação de falhas reais.
 
-O CSV `avaliacao-cega.csv` omite configuração e resultado operacional e usa um ID opaco. O estilo, as menções a ferramentas e ao texto normativo podem sugerir a origem. Envie ao avaliador uma cópia do CSV, sem a chave local. Para a leitura documental, forneça separadamente o pacote `avaliacao-referencias.json` com os trechos pertinentes. Cada critério vai de 0 a 2:
+Os tempos de consultas MCP somam leituras instrumentadas, inclusive recusas com duração registrada. A descoberta do catálogo, a seleção feita pelo chat e a execução da ação ficam fora dessa soma. Os tokens de embeddings vêm de `prompt_eval_count` da recuperação, quando informado. Célula vazia ou `null` indica falta de medida. Zero indica medida de valor zero. Há gráficos separados de concordância original, concordância final, recusas do modelo, fallbacks e custos. A taxa de recusas usa propostas submetidas ao validador. A taxa de fallback usa decisões avaliadas do agente.
+
+O CSV `avaliacao-cega.csv` usa um ID opaco e apresenta evidências, estado autorizado imediatamente anterior à decisão e ações disponíveis com seus parâmetros. A configuração e o resultado operacional ficam na trilha local. O estilo, as menções a ferramentas e ao texto normativo podem sugerir a origem. Envie ao avaliador uma cópia do CSV, sem a chave local. Para a leitura documental, forneça separadamente o pacote `avaliacao-referencias.json` com os trechos pertinentes. Cada critério vai de 0 a 2:
 
 | Critério | 0 | 1 | 2 |
 | --- | --- | --- | --- |
@@ -82,7 +87,9 @@ O CSV `avaliacao-cega.csv` omite configuração e resultado operacional e usa um
 | Pertinência das referências | Trechos sem relação | Relação parcial | Trechos diretamente pertinentes à questão |
 | Suporte das referências | A citação contradiz ou não sustenta a afirmação | Sustenta apenas parte | Sustenta a afirmação atribuída |
 
-Pontuações começam vazias. Os dois itens documentais são independentes dos quatro critérios principais e só se aplicam quando há trechos para conferir. Importe uma cópia preenchida com `oran-experiment importar-avaliacoes --saida results/etapa7/meu-piloto --avaliacoes caminho/avaliado.csv`. Cada importação efetiva cria um lote próprio.
+Pontuações começam vazias. Os dois itens documentais são independentes dos quatro critérios principais e só se aplicam quando há trechos para conferir. Identifique um único avaliador por lote, por exemplo `oran-experiment importar-avaliacoes --saida results/etapa7/meu-piloto --avaliacoes caminho/avaliado.csv --avaliador rev-01`. A coluna `avaliador` do CSV também aceita o identificador. Cada importação efetiva preserva um lote próprio.
+
+Os arquivos `avaliacoes_consolidadas.csv` e `avaliacoes_consolidadas.json` são locais. Eles mostram totais e recortes por avaliador, configuração e critério. Cada entrada usa a pontuação efetiva mais recente para o mesmo avaliador, resposta e critério, com células vazias preservando notas anteriores. O denominador esperado é o número de respostas elegíveis na configuração multiplicado pelo número de avaliadores ou lotes históricos sem identificação no recorte. A média usa apenas notas registradas. Lotes antigos sem identificação permanecem explícitos, sem atribuir uma identidade a eles.
 
 ## Arquivos
 
@@ -102,4 +109,4 @@ A execução `results/etapa7/piloto-20261127/` concluiu as dez oportunidades com
 
 As cinco recusas ocorreram quando o modelo propôs ampliar a janela de um evento ainda inexistente. No caso com throughput ausente, todos os agentes fizeram essa proposta. A concordância final reflete sobretudo a ação do fallback nesse caso. Os resultados são descritivos de dois casos piloto. As notas humanas continuam vazias.
 
-A referência Python sobre o Excel oficial escolheu `nenhuma_acao` nas duas janelas conforme a pré-especificação. Esta execução está em `results/etapa7/excel-python/`. A exploração A–E ficou planejada separadamente. O plano final de seis casos está salvo em `results/etapa7/final-planejado/` e aguarda autorização.
+A referência Python sobre o Excel oficial escolheu `nenhuma_acao` nas duas janelas conforme a pré-especificação. Esta execução está em `results/etapa7/excel-python/`. A exploração A–E ficou planejada separadamente. O plano em `results/etapa7/final-planejado/` permanece como registro histórico. A bateria final exige um plano da revisão definitiva e autorização.

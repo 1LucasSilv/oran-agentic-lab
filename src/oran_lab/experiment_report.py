@@ -7,13 +7,16 @@ from uuid import uuid4
 
 import pandas as pd
 
+from .agent import build_context
 from .experiment import atomic_json, now, read_json, run_lock
+from .experiment_cases import LIMITS
 from .rag import digest_json
 
 RUBRIC = ("fidelidade_kpm", "coerencia_operacional", "correcao_tecnica", "limitacoes",
           "pertinencia_referencias", "suporte_referencias")
 METRICS = ("concordancia_proposta", "concordancia_final", "tempo_s", "tempo_chat_s",
-           "entrada_tokens", "saida_tokens", "tempo_recuperacao_s", "concordancia_com_contexto_rag")
+           "entrada_tokens", "saida_tokens", "tempo_recuperacao_s", "concordancia_com_contexto_rag",
+           "tempo_consultas_mcp_s", "entrada_embeddings_tokens", "recusa_modelo", "fallback")
 
 
 def matches(proposal, expected):
@@ -41,7 +44,7 @@ def tool_classification(audit, window, base_context):
                          any(value is not None for key, value in row.items() if key != "Register")
                          for row in result["registros"])
         records.append({"ferramenta": name, "valida": valid, "util": useful if valid else None,
-                        "redundante": (not useful) if valid else None})
+                        "redundante": (not useful) if valid else None, "tempo_s": entry.get("tempo_s")})
     return records
 
 
@@ -107,9 +110,14 @@ def flatten(job, window, event, chats, execution):
     attempted_final = any(item["tipo"] == "decisao" for item in chats)
     rag_cited = rag.get("referencias_citadas")
     has_excerpts = bool(rag.get("referencias_apresentadas"))
+    tool_times = [t["tempo_s"] for t in tools if type(t["tempo_s"]) in (int, float)]
+    failure_phase = execution.get("fase_falha")
+    if decision.get("erro") or decision.get("erro_consulta_mcp") or rag.get("erro") or communication_count:
+        failure_phase = "durante_execucao"
     return {
         "execucao": job["id"], "caso": job["caso"], "configuracao": job["configuracao"], "seed": job["seed"],
         "janela": window, "estado_execucao": execution["estado"], "avaliada": evaluated,
+        "erro_execucao": execution.get("erro"), "fase_falha": failure_phase,
         "expectativa_acao": (expected or {}).get("acao"),
         "proposta_acao": (original or {}).get("acao"),
         "concordancia_proposta": matches(original, expected) if evaluated and is_model else None,
@@ -118,6 +126,7 @@ def flatten(job, window, event, chats, execution):
         "proposta_modelo_ausente": (original is None) if is_model and evaluated else None,
         "decisao_final_nao_consultada": (not attempted_final) if is_model and evaluated else None,
         "validacao_modelo": (model_entry or {}).get("validacao", {}).get("estado"),
+        "recusa_modelo": model_entry["validacao"]["estado"] == "recusada" if model_entry else None,
         "validacao_final": (final or {}).get("validacao", {}).get("estado"),
         "execucao_final": (final or {}).get("execucao", {}).get("estado"),
         "acao_final": (final or {}).get("proposta", {}).get("acao"), "origem_final": (final or {}).get("origem"),
@@ -142,6 +151,9 @@ def flatten(job, window, event, chats, execution):
         "rag_sem_contexto_apresentado": not has_excerpts if is_rag and evaluated else None,
         "concordancia_com_contexto_rag": matches(original, expected) if has_excerpts else None,
         "tempo_s": (event or {}).get("tempo_s"), "tempo_recuperacao_s": rag.get("tempo_recuperacao_s"),
+        "tempo_consultas_mcp_s": sum(tool_times) if tool_times else None,
+        "n_consultas_mcp_com_tempo": len(tool_times) if is_mcp and evaluated else None,
+        "entrada_embeddings_tokens": (rag.get("metricas_embeddings") or {}).get("prompt_eval_count"),
         "tempo_chat_s": sum(d.get("tempo_chamada_s") or 0 for d in model_calls) if chats and evaluated else None,
         "entrada_tokens": sum_metric("prompt_eval_count"), "saida_tokens": sum_metric("eval_count"),
         "entrada_em_cache_tokens": sum_metric("prompt_eval_cached_count"),
@@ -208,6 +220,7 @@ def write_exports(values, directory):
     counts.to_csv(output / "contagens.csv", encoding="utf-8")
     atomic_json(output / "contagens.json", json.loads(counts.reset_index().to_json(orient="records")))
     export_reviews(values, output)
+    consolidate_reviews(directory, output)
     plot(stats, output)
     return {"oportunidades": len(frame), "avaliadas": int(frame["avaliada"].sum()),
             "chat_reservadas": int(frame["chat_reservadas"].sum()), "pasta": str(output)}
@@ -232,6 +245,37 @@ def plot(stats, output):
     fig.savefig(output / "resumo.png", dpi=140)
     plt.close(fig)
 
+    def draw(ax, metric, title, proportion=False):
+        data = stats[stats.metrica == metric].dropna(subset=["media_das_medias_por_caso"])
+        ax.bar(data["configuracao"], data["media_das_medias_por_caso"])
+        for pos, n in enumerate(data["n_com_medida"]):
+            ax.annotate(f"n={n}", (pos, 0), xytext=(0, 3), textcoords="offset points", ha="center")
+        if data.empty:
+            ax.text(0.5, 0.5, "Sem medida disponível", ha="center", transform=ax.transAxes)
+        ax.set_title(title)
+        ax.set_xlabel("Configuração")
+        if proportion:
+            ax.set_ylim(0, 1.05)
+
+    for metric, title in (("concordancia_proposta", "Concordância das propostas originais"),
+                          ("concordancia_final", "Concordância das decisões finais"),
+                          ("recusa_modelo", "Recusas entre propostas validadas do modelo"),
+                          ("fallback", "Fallbacks entre decisões avaliadas do agente")):
+        fig, ax = plt.subplots(figsize=(6, 4), layout="constrained")
+        draw(ax, metric, title, proportion=True)
+        fig.savefig(output / f"{metric}.png", dpi=140)
+        plt.close(fig)
+
+    fig, axes = plt.subplots(2, 3, figsize=(12, 7), layout="constrained")
+    costs = (("tempo_chat_s", "Chat (s)"), ("tempo_consultas_mcp_s", "Consultas MCP (s)"),
+             ("tempo_recuperacao_s", "Recuperação RAG (s)"), ("entrada_tokens", "Entrada de chat (tokens)"),
+             ("saida_tokens", "Saída de chat (tokens)"), ("entrada_embeddings_tokens", "Embeddings (tokens)"))
+    for ax, (metric, title) in zip(axes.flat, costs, strict=True):
+        draw(ax, metric, title)
+    fig.suptitle("Custos observados · médias por caso")
+    fig.savefig(output / "custos_computacionais.png", dpi=140)
+    plt.close(fig)
+
 
 def export_reviews(values, output):
     reviews, references, mapping = [], [], {}
@@ -246,16 +290,22 @@ def export_reviews(values, output):
             continue
         blind = digest_json([run_id, job["id"], window])[:16]
         answer = {key: candidate[key] for key in ("acao", "parametros", "justificativa")}
+        state = event["estado_anterior"]
+        context = build_context(event["detector"], state, LIMITS)
+        actions = {name: context["acoes"][name] for name in context["acoes_com_alvo_disponivel"]}
         reviews.append({"id": blind, "caso": job["caso"], "janela": window,
                         "evidencias": json.dumps(event["detector"], ensure_ascii=False),
+                        "estado_inicial": json.dumps(state, ensure_ascii=False),
+                        "acoes_disponiveis": json.dumps(actions, ensure_ascii=False),
                         "resposta": json.dumps(answer, ensure_ascii=False),
-                        **{field: "" for field in RUBRIC}, "comentario": ""})
+                        **{field: "" for field in RUBRIC}, "avaliador": "", "comentario": ""})
         cite = (audit.get("rag") or {}).get("referencias_citadas")
         presented = (audit.get("contexto_final") or {}).get("referencias_3gpp", [])
         if presented:
             references.append({"id": blind, "citadas": cite, "apresentadas": presented})
         mapping[blind] = {"execucao": job["id"], "configuracao": job["configuracao"], "janela": window}
-    fields = ("id", "caso", "janela", "evidencias", "resposta", *RUBRIC, "comentario")
+    fields = ("id", "caso", "janela", "evidencias", "estado_inicial", "acoes_disponiveis",
+              "resposta", *RUBRIC, "avaliador", "comentario")
     pd.DataFrame(sorted(reviews, key=lambda row: row["id"]), columns=fields).to_csv(
         output / "avaliacao-cega.csv", index=False, encoding="utf-8-sig")
     atomic_json(output / "avaliacao-referencias.json", sorted(references, key=lambda row: row["id"]))
@@ -268,13 +318,56 @@ def aggregate(directory):
         return write_exports(list(read_experiment(directory)), directory)
 
 
-def import_reviews(directory, path: Path):
+def consolidate_reviews(directory, output):
+    known = read_json(output / "chave-avaliacao-local.json")
+    reference_ids = {row["id"] for row in read_json(output / "avaliacao-referencias.json")}
+    batches = [(file.stem, read_json(file)) for file in (directory / "avaliacoes").glob("*.json")]
+    ratings = {}
+    for batch_id, batch in sorted(batches, key=lambda item: (item[1]["data_utc"], item[0])):
+        reviewer = batch.get("avaliador")
+        key = (reviewer, None if reviewer else batch_id)
+        scores = ratings.setdefault(key, {})
+        for item_id, rating in batch["avaliacoes"].items():
+            for criterion, score in rating["pontuacoes"].items():
+                if score is not None:
+                    scores[item_id, criterion] = score
+
+    groups = {"todas": set(known)}
+    for item_id, source in known.items():
+        groups.setdefault(source["configuracao"], set()).add(item_id)
+    scopes = [("todos", None, None, list(ratings.values()))]
+    scopes.extend(("individual", reviewer, legacy, [scores])
+                  for (reviewer, legacy), scores in ratings.items())
+    rows = []
+    for scope, reviewer, legacy, reviewers in scopes:
+        for configuration, items in groups.items():
+            for criterion in RUBRIC:
+                documental = criterion in RUBRIC[-2:]
+                eligible = items & reference_ids if documental else items
+                scores = [given[item, criterion] for given in reviewers for item in eligible
+                          if (item, criterion) in given]
+                expected = len(eligible) * len(reviewers)
+                rows.append({"escopo": scope, "avaliador": reviewer, "lote_sem_identificacao": legacy,
+                             "configuracao": configuration, "grupo": "documental" if documental else "principal",
+                             "criterio": criterion, "n_itens_elegiveis": len(eligible), "n_previstas": expected,
+                             "n_pontuadas": len(scores), "n_ausentes": expected - len(scores),
+                             "n_0": scores.count(0), "n_1": scores.count(1), "n_2": scores.count(2),
+                             "media": sum(scores) / len(scores) if scores else None})
+    pd.DataFrame(rows).to_csv(output / "avaliacoes_consolidadas.csv", index=False, encoding="utf-8")
+    atomic_json(output / "avaliacoes_consolidadas.json",
+                {"avaliadores_identificados": sorted(reviewer for reviewer, _ in ratings if reviewer),
+                 "lotes_sem_identificacao": sorted(legacy for _, legacy in ratings if legacy),
+                 "criterios": rows})
+
+
+def import_reviews(directory, path: Path, *, evaluator=None):
     """Importa avaliações sem sobrescrever lotes já registrados."""
     with run_lock(directory):
         output = directory / "relatorios"
         known = read_json(output / "chave-avaliacao-local.json")
         reference_ids = {item["id"] for item in read_json(output / "avaliacao-referencias.json")}
         imported = {}
+        reviewers = set()
         with path.open(encoding="utf-8-sig", newline="") as stream:
             reader = csv.DictReader(stream)
             if not set(("id", *RUBRIC)) <= set(reader.fieldnames or []):
@@ -291,10 +384,20 @@ def import_reviews(directory, path: Path):
                         raise ValueError(f"Pontuação inválida em {key}/{field}")
                     scores[field] = int(value) if value else None
                 imported[key] = {"pontuacoes": scores, "comentario": row.get("comentario", "")}
+                if any(value is not None for value in scores.values()) or imported[key]["comentario"]:
+                    reviewer = (row.get("avaliador") or "").strip()
+                    if reviewer:
+                        reviewers.add(reviewer)
         completed = {key: record for key, record in imported.items()
                      if any(value is not None for value in record["pontuacoes"].values()) or record["comentario"]}
         if not completed:
             raise ValueError("O CSV ainda não contém avaliações preenchidas")
+        if evaluator and evaluator.strip():
+            reviewers.add(evaluator.strip())
+        if len(reviewers) != 1:
+            raise ValueError("Identifique um único avaliador por lote com --avaliador ou a coluna avaliador")
         target = directory / "avaliacoes" / f"{uuid4().hex}.json"
-        atomic_json(target, {"data_utc": now(), "origem": path.name, "avaliacoes": completed})
+        atomic_json(target, {"data_utc": now(), "origem": path.name,
+                             "avaliador": reviewers.pop(), "avaliacoes": completed})
+        consolidate_reviews(directory, output)
         return {"pasta": str(target), "avaliacoes": len(completed)}

@@ -7,17 +7,34 @@
 
 ## 1. Visão geral
 
+### Fase I — IA Agêntica aplicada à análise e decisão em redes 5G O-RAN
+
+A Fase I compreende as Etapas 0 a 8, incluindo 5.1 e 7.1. Seu objetivo é avaliar conformidade operacional, capacidade investigativa, fundamentação técnica, segurança e custo computacional de agentes com MCP e RAG sobre dados históricos de redes 5G. As ações ficam restritas ao simulador. Esta fase é prioritária e será concluída independentemente da Fase II.
+
 Desenvolver e avaliar um **protótipo de análise e resposta assistida por SLM/LLM** usando métricas KPM históricas de uma rede 5G experimental. O sistema deverá ler os dados, detectar situações potencialmente anormais, investigar o contexto, **propor uma ação**, executá-la no **simulador de software** após validação e verificar os efeitos que podem ser observados nesse simulador.
 
 **Ciclo:** `Observar → Detectar → Investigar → Decidir → Validar → Agir → Verificar`.
 
-### O que está fora do escopo
+### O que está fora do escopo da Fase I
 
 - Construir xApps, rApps, Near-RT RIC ou ambiente 5G real.
 - Enviar comandos para O-DU/O-CU/gNB/UE reais.
 - Demonstrar ganho real de throughput/latência produzido por uma ação aplicada sobre o dataset histórico.
 - Treinar ou ajustar um LLM no início do projeto.
 - Criar sistema multiagente complexo antes de validar um único agente.
+
+### Fase II — Controle e otimização de redes 5G O-RAN
+
+Possibilidade de expansão futura, opcional e sujeita a autorização específica. OpenAirInterface, RFSim, 5G Core e FlexRIC são tecnologias candidatas para uma futura avaliação de viabilidade.
+
+| Etapa | Proposta futura |
+| --- | --- |
+| 9 | Implantação de rede 5G experimental |
+| 10 | Coleta contínua de KPMs e geração controlada de congestionamento |
+| 11 | Integração de mecanismos de controle O-RAN |
+| 12 | Controle em malha fechada com IA Agêntica |
+| 13 | Experimentos de desempenho e mitigação de congestionamento |
+| 14 | Consolidação científica da pesquisa ampliada |
 
 ## 2. Questões que orientam o laboratório
 
@@ -113,7 +130,7 @@ Ação inicial recomendada: **ampliar a janela de análise** após alerta persis
 - Consistência da interpretação e qualidade técnica avaliada com **rubrica explícita**.
 - **Não medir suposta melhoria da rede real** a partir de ações no replay histórico.
 
-## 6. Cronograma por etapas e critérios de aceite
+## 6. Cronograma da Fase I e critérios de aceite
 
 | Etapa | Entrega | Critério verificável de conclusão | Commit sugerido |
 |---|---|---|---|

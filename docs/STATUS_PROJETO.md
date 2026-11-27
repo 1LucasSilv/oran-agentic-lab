@@ -2,6 +2,11 @@
 
 Atualizado em 27 de novembro de 2026.
 
+## Fases da pesquisa
+
+- **Fase I — IA Agêntica aplicada à análise e decisão em redes 5G O-RAN.** Prioritária, será concluída de forma independente. Abrange as Etapas 0 a 8, incluindo 5.1 e 7.1, e avalia conformidade operacional, capacidade investigativa, fundamentação técnica, segurança e custo computacional sobre KPMs históricos. As ações ficam restritas ao simulador.
+- **Fase II — Controle e otimização de redes 5G O-RAN.** Opcional, com Etapas 9 a 14 propostas e autorização específica pendente. OpenAirInterface, RFSim, 5G Core e FlexRIC são candidatos para avaliação futura de viabilidade. [Etapas propostas](PLANO_LABORATORIO.md)
+
 ## Etapas
 
 | Etapa | Estado e entrega |
@@ -74,9 +79,13 @@ A suíte padrão da Etapa 6 teve 138 testes aprovados e 2 opcionais ignorados. C
 
 O piloto em `results/etapa7/piloto-20261127/` avaliou dez oportunidades e encerrou com 12 chamadas de chat. Três de oito propostas originais dos agentes concordaram com a expectativa. Houve cinco recusas e cinco fallbacks. As dez decisões finais concordaram com as ações pré-fixadas. Quatro consultas MCP acrescentaram dados históricos segundo o critério estrutural. Um agente concluiu com referência conferida, no modo E. As pontuações humanas seguem vazias. [Protocolo e resultados do piloto](EXPERIMENTOS.md)
 
-A referência Python no Excel oficial escolheu `nenhuma_acao` nas janelas 1 e 4 conforme o protocolo, com zero chamadas de chat. O plano A–E exploratório ficou em `results/etapa7/excel-planejado/`, e a execução A em `results/etapa7/excel-python/`. O plano final controlado está em `results/etapa7/final-planejado/`, com 90 sessões e teto de 108 chamadas. Nenhuma sessão final foi iniciada.
+A referência Python no Excel oficial escolheu `nenhuma_acao` nas janelas 1 e 4 conforme o protocolo, com zero chamadas de chat. O plano A–E exploratório ficou em `results/etapa7/excel-planejado/`, e a execução A em `results/etapa7/excel-python/`. O plano histórico em `results/etapa7/final-planejado/` prevê 90 sessões e teto de 108 chamadas. Gere o plano definitivo em outra pasta após o commit definitivo, pois o plano inclui a revisão Git. Nenhuma sessão final foi iniciada.
+
+A bateria final agora exige pré-verificação do serviço, dos modelos e do índice conforme a configuração. Os recursos locais foram conferidos sem chamadas de inferência. Os novos gráficos e a consolidação humana foram verificados em uma cópia do piloto, com os resultados originais preservados. O exportador inclui o estado autorizado e as ações disponíveis. O relatório separa critérios principais de documentais e distingue ausências de zero. Nenhuma avaliação humana foi importada.
 
 A suíte padrão local teve 147 testes aprovados e 2 opcionais ignorados. A instalação editável disponibilizou `oran-experiment` e o `pip check` confirmou as dependências. A matriz GitHub conserva as fixtures sintéticas e os três runners.
+
+Após os ajustes pré-bateria, a suíte padrão local teve 152 testes aprovados e 2 opcionais ignorados. O `pip check` passou.
 
 ## Limitações e pendências
 
