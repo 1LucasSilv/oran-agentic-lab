@@ -1,7 +1,7 @@
 # Plano de desenvolvimento — Laboratório de IA Agêntica para Redes 5G Open RAN
 
 **Identificador do projeto:** `oran-agentic-lab`  
-**Estado:** Etapas 0 a 5 aprovadas, Etapa 5.1 implementada com validação local no Windows e suíte padrão aprovada na matriz do GitHub Actions. [Status e evidências](STATUS_PROJETO.md)\
+**Estado:** Etapas 0 a 5 aprovadas, Etapa 5.1 validada e Etapa 6 implementada com RAG opcional. [Status e evidências](STATUS_PROJETO.md)\
 **Abordagem:** protótipo pequeno, incremental, funcional e reproduzível  
 **Ambiente de trabalho:** Python, VS Code + Codex e GitHub. Windows e Linux têm evidências locais nas revisões registradas. A matriz com Windows, Linux e macOS usa Python 3.13.
 
@@ -50,7 +50,7 @@ Não chamar eventos de “falhas comprovadas” sem rótulos ou evidências veri
 
 Referência fornecida: `lab_TSpec.ipynb`. O notebook explora **Qwen 2.5 7B Instruct, Ollama, RAG, LlamaIndex, embeddings e FAISS**. **Não há demonstração de fine-tuning no código**. Ele também contém tentativas de download/indexação que não devem ser consideradas execução bem-sucedida sem validação.
 
-A etapa documental deve usar **poucos documentos 3GPP pertinentes aos KPMs**, registrar título/versão/cláusula/fonte e separar trechos recuperados de interpretações do LLM. Não importar configurações de acesso remoto ou segredos do notebook.
+A Etapa 6 usa cláusulas selecionadas da TS 28.552 V18.7.0 e da TS 38.300 V18.4.0. O manifesto fixa revisão e SHA-256. PyPDF e embeddings Ollama geram um índice local, com referências por fragmento, versão, seção e página. As citações são auditadas antes de passar a proposta de ação ao validador. [Corpus, operação e auditoria](RAG.md)
 
 ### 3.3 Dataset antigo
 
@@ -74,7 +74,7 @@ OAI-KPM-dataset (.xlsx)
 [Política Python ou agente Ollama — propõe ações]
    │                  │
    │                  ├── consulta de histórico via MCP (opcional)
-   │                  └── RAG 3GPP opcional (fase posterior)
+   │                  └── RAG 3GPP opcional (índice local)
    ▼
 [Validador determinístico de ações]
          │
@@ -124,7 +124,7 @@ Ação inicial recomendada: **ampliar a janela de análise** após alerta persis
 | **4. Agente Ollama** | Decisão assistida por modelo, JSON estruturado e fallback | Modelo pode propor ação; saída inválida é bloqueada; execução não depende de resposta insegura | `feat: integra agente ollama ao ciclo` |
 | **5. MCP** | Servidor e cliente MCP local, ferramentas de consulta/ação | Testes de chamadas e parâmetros; ações sempre passam pelo validador | `feat: disponibiliza ferramentas mcp` |
 | **5.1. Portabilidade e reprodutibilidade** | README autossuficiente, scripts de preparação, diagnóstico e CI | Dataset com revisão e SHA-256, scripts e suíte validados localmente, workflow preparado para Ubuntu, Windows e macOS, evidências por sistema no status | `chore: melhora portabilidade e reprodutibilidade do laboratorio` |
-| **6. RAG 3GPP** | Índice pequeno, consulta com referência técnica | Respostas exibem fonte e versão recuperadas; ausência de contexto é informada | `feat: adiciona consulta rag a normas 3gpp` |
+| **6. RAG 3GPP** | Corpus verificado, índice cosseno local e contexto documental opcional com ou sem MCP | Respostas identificam referências apresentadas por versão, seção e página. A falta de contexto e citações inválidas são auditadas. | `feat: adiciona consulta rag a normas 3gpp` |
 | **7. Comparação** | Execução padronizada das configurações A/B/C | Mesmos cenários e critérios, com resultados e limitações documentados | `test: compara modelos e configuracoes` |
 | **8. Consolidação** | Relatório curto, gráficos, documentação e instruções de reprodução | Terceiro consegue reproduzir o fluxo com dados disponíveis | `docs: consolida resultados do laboratorio` |
 
@@ -156,7 +156,7 @@ Configurações:
 
 **Por modo:** pytest para testes, Ollama e uma tag local para inferência, MCP Python SDK para ferramentas MCP. A planilha oficial só é necessária para execuções com os dados reais. Bibliotecas de recuperação documental ficam para a etapa correspondente.
 
-A CI instala `.[test,mcp]` e roda a suíte padrão com dados sintéticos. As integrações reais com Ollama e MCP stdio são opcionais. O workflow usa runners hospedados pelo GitHub com permissão de leitura, sem dependência do runtime operacional.
+A CI instala `.[test,mcp,rag]` e roda a suíte padrão com planilhas e PDFs sintéticos. As integrações reais com Ollama e MCP stdio são opcionais. O workflow usa runners hospedados pelo GitHub com permissão de leitura, sem dependência do runtime operacional.
 
 O modelo para o MVP deve ser **configurável**. Testar um SLM pequeno localmente primeiro; Qwen 2.5 7B é candidato de comparação **somente se o equipamento comportar** ou houver ambiente computacional apropriado.
 
@@ -208,7 +208,7 @@ O prompt completo para o ChatGPT Project pode ficar **fora do repositório**, em
 
 O Codex pode implementar **módulos completos por etapa**. O pesquisador participa de decisões, execução, conferência dos resultados e entendimento do funcionamento, **não de cada linha**.
 
-Consulte e atualize o [status do projeto](STATUS_PROJETO.md) a cada etapa. Registre as versões e os resultados observados por sistema. A Etapa 6 aguarda autorização.
+Consulte e atualize o [status do projeto](STATUS_PROJETO.md) a cada etapa. Registre as versões e os resultados observados por sistema. A comparação controlada da Etapa 7 aguarda autorização.
 
 Ao terminar uma etapa, entregar:
 

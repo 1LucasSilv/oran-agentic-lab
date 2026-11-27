@@ -20,6 +20,7 @@ No Bash/Zsh, os equivalentes são `.venv/bin/python` e `.venv/bin/oran-loop`. Se
 - Para uma cópia local, use `python scripts/download_dataset.py --verificar --destino "caminho/planilha.xlsx"` e `python scripts/check_environment.py --dataset "caminho/planilha.xlsx"`. O primeiro encerra com código 1 se o arquivo estiver ausente, inacessível ou com hash divergente.
 - Se o arquivo estiver corrompido, rode o downloader com o destino desejado. Ele publica a cópia nova apenas depois de validar o SHA-256 e mantém o arquivo que já estava no destino se o download falhar. Em uma instalação sem rede, transfira a planilha auditada de outra máquina e use `--verificar`.
 - Se o pytest receber um erro de permissão no diretório temporário, use `python -m pytest -q --basetemp "results/pytest-temporario"` com um diretório exclusivo e descartável. O pytest limpa esse diretório ao reutilizá-lo.
+- Para RAG, instale `.[rag]` e use `oran-rag verificar` para diagnosticar PyPDF, PDFs oficiais, modelo/digest e índice. Os procedimentos de construção e atualização estão no [guia RAG](RAG.md).
 
 ## Configurar serviço local e modelo
 
@@ -91,6 +92,7 @@ Revise os três caminhos separadamente antes de enviar os arquivos selecionados 
 | --- | --- |
 | `data/raw/` | Planilha oficial verificada e planilhas próprias ou recebidas de terceiros. Guarde os arquivos que não podem ser baixados novamente. |
 | `data/processed/` | Dados derivados. Preserve os arquivos ou as entradas e configurações necessárias para reproduzi-los. |
+| `data/rag/documentos/` e `data/rag/indice.json` | PDFs oficiais e índice local. O índice pode ser reconstruído com PDFs e embeddings compatíveis. |
 | `results/` | Resultados, relatórios e gráficos. Preserve o histórico científico e confira os caminhos personalizados de saída antes de descartá-los. |
 
 ### Remover somente modelos do Ollama (opcional)
@@ -104,6 +106,8 @@ ollama list
 ```
 
 Confira a primeira listagem antes de executar `ollama rm`. Se configurou `OLLAMA_MODELS`, confirme que o serviço aponta para o armazenamento pretendido. Os locais padrão documentados são `%USERPROFILE%\.ollama\models` no Windows, `~/.ollama/models` no macOS e `/usr/share/ollama/.ollama/models` no Linux com serviço padrão. Use a CLI para remover tags individuais e preserve o restante do armazenamento. [Locais dos modelos](https://docs.ollama.com/faq#where-are-models-stored)
+
+Para a tag de embeddings usada pelo RAG, siga a mesma revisão antes de executar `ollama rm embeddinggemma`. [Remoção do modelo de embeddings](RAG.md#remover-o-modelo-de-embeddings)
 
 ### Desinstalar o Ollama (opcional)
 

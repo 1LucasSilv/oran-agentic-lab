@@ -9,4 +9,5 @@ dist/
 .env.*
 data/raw/
 data/processed/
+data/rag/
 results/

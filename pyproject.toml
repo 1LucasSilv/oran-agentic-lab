@@ -17,11 +17,16 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest==9.2.0"]
 mcp = ["mcp==2.3.0"]
+rag = ["pypdf==6.10.2"]
 
 [project.scripts]
 oran-eda = "oran_lab.eda:main"
 oran-replay = "oran_lab.detector:main"
 oran-loop = "oran_lab.loop:main"
+oran-rag = "oran_lab.rag:main"
+
+[tool.setuptools.package-data]
+oran_lab = ["rag_manifest.json"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

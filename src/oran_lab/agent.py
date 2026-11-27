@@ -1,6 +1,7 @@
 """Cliente Ollama local, contrato das propostas e auditoria das decisões."""
 
 import json
+import re
 from dataclasses import asdict
 from hashlib import sha256
 from http.client import HTTPException
@@ -11,6 +12,7 @@ from .ollama import AgentConfig, OllamaClient, strict_json
 from .simulator import ACTION_PARAMETERS, NO_ACTION, PRIORITIES, REGISTER_ALERT
 
 PROMPT_VERSION = "kpm-v2"
+REFERENCE_ID = re.compile(r"\bR\d+\b", flags=re.IGNORECASE)
 SYSTEM_PROMPT = """Você analisa janelas históricas de KPMs. Use somente os dados fornecidos.
 Proponha uma única ação do simulador. Responda exclusivamente com um objeto JSON com
 acao, parametros e justificativa objetiva em português. Use os nomes e tipos indicados.
@@ -66,6 +68,32 @@ def parse_proposal(raw):
     return obj
 
 
+def rag_schema(references):
+    choices = {"type": "array", "items": {"type": "string", "enum": references},
+               "uniqueItems": True, "maxItems": len(references)}
+    reason = {"type": "string", "minLength": 1, "maxLength": 300}
+    return {"oneOf": [object_schema({**branch["properties"], "justificativa": reason, "referencias": choices})
+                      for branch in SCHEMA["oneOf"]]}
+
+
+def parse_grounded_proposal(raw, presented, audit):
+    obj = strict_json(raw)
+    if type(obj) is not dict:
+        raise ValueError("Resposta com referências inválida")
+    cited = obj.pop("referencias", None)
+    audit["referencias_citadas"] = cited
+    allowed = {item["ref"] for item in presented}
+    if (type(cited) is not list or any(type(item) is not str or item not in allowed for item in cited)
+            or len(set(cited)) != len(cited)):
+        raise ValueError("A resposta contém referências ausentes, repetidas ou não apresentadas")
+    proposal = parse_proposal(json.dumps(obj, ensure_ascii=False))
+    mentioned = REFERENCE_ID.findall(proposal["justificativa"])
+    if not {ref.upper() for ref in mentioned} <= set(cited):
+        raise ValueError("A justificativa menciona referência não declarada")
+    audit["referencias_validas"] = True
+    return proposal
+
+
 def build_context(detection, state, limits):
     window = detection["janela"]
     identity = {"id": window["id"], "segmento": window["segmento"], "completa": window["completa"],
@@ -94,12 +122,13 @@ def build_context(detection, state, limits):
 class AgentSession:
     """Uma sessão por execução. A política hospedeira fornece o fallback."""
 
-    def __init__(self, config, client=None):
+    def __init__(self, config, client=None, rag=None):
         self.config = config
         self.client = client or OllamaClient(config)
         self.calls = self.failures = self.consecutive = 0
         self.decisions = []
         self.metadata = self.client.metadata()
+        self.rag = rag
 
     def _skip(self, detection):
         if self.config.selection == "suspeitas" and detection["situacao"] != SUSPECT:
@@ -115,9 +144,16 @@ class AgentSession:
         options = {k: getattr(config, k) for k in ("temperature", "num_ctx", "num_predict")}
         if config.seed is not None:
             options["seed"] = config.seed
+        user = json.dumps(context, ensure_ascii=False)
+        if self.rag is not None:
+            from .rag import CHAT_RESERVE
+
+            input_size = len(system.encode("utf-8")) + len(user.encode("utf-8"))
+            if input_size + config.num_predict + CHAT_RESERVE > config.num_ctx:
+                raise ValueError("Contexto operacional não cabe no orçamento da inferência")
         payload = {"model": config.model, "stream": False, "format": schema, "options": options,
                    "messages": [{"role": "system", "content": system},
-                                {"role": "user", "content": json.dumps(context, ensure_ascii=False)}]}
+                                {"role": "user", "content": user}]}
         self.calls += 1
         call_start = perf_counter()
         try:
@@ -145,6 +181,35 @@ class AgentSession:
         audit.setdefault("inferencias_consulta", []).append(record)
         return self._infer(schema, prompt, context, record)
 
+    def _propose(self, detection, context, audit):
+        if self.rag is None:
+            return parse_proposal(self._infer(SCHEMA, SYSTEM_PROMPT, context, audit))
+        from .rag import RAG_PROMPT, budget_context
+
+        retrieval = self.rag.retrieve(detection)
+        audit["rag"] = retrieval
+        system = f"{SYSTEM_PROMPT}\n\n{RAG_PROMPT}"
+        presented, budget = budget_context(context, retrieval["recuperados"], self.config, system)
+        retrieval["orcamento"] = budget
+        if not presented:
+            if retrieval["estado"] == "recuperado":
+                retrieval["estado"] = "sem_orcamento"
+            proposal = parse_proposal(self._infer(SCHEMA, SYSTEM_PROMPT, context, audit))
+            if REFERENCE_ID.search(proposal["justificativa"]):
+                raise ValueError("A justificativa cita referência documental sem trecho apresentado")
+            return proposal
+        retrieval["estado"] = "contexto_apresentado"
+        references = [r["ref"] for r in presented]
+        retrieval["referencias_apresentadas"] = [
+            {"ref": f"R{number}", **{key: value for key, value in hit.items() if key != "texto"}}
+            for number, hit in enumerate(retrieval["recuperados"], 1) if f"R{number}" in references
+        ]
+        payload = {**context, "referencias_3gpp": presented}
+        schema = rag_schema(references)
+        audit.update(contexto_final=payload, prompt_rag=system, schema_rag=schema)
+        raw = self._infer(schema, system, payload, audit)
+        return parse_grounded_proposal(raw, presented, retrieval)
+
     def decide(self, detection, simulator, baseline, mcp=None):
         start = perf_counter()
         config = self.config
@@ -166,7 +231,7 @@ class AgentSession:
                         lambda schema, prompt, query: self._consult_model(schema, prompt, query, audit),
                         context, config.max_calls - self.calls,
                     )
-                proposal = parse_proposal(self._infer(SCHEMA, SYSTEM_PROMPT, audit.get("contexto_final", context), audit))
+                proposal = self._propose(detection, audit.get("contexto_final", context), audit)
                 audit["proposta_modelo"] = proposal
             except (OSError, HTTPException, ValueError, RecursionError) as error:
                 audit["erro"] = f"{type(error).__name__}: {error}"
@@ -202,6 +267,12 @@ class AgentSession:
         audit.update(historico_final=entry["id"], origem_decisao_final=entry["origem"],
                      origem_execucao=entry["origem"] if entry["execucao"]["estado"] == "executada" else None,
                      tempo_decisao_s=perf_counter() - start)
+        if "rag" in audit:
+            retrieval = audit["rag"]
+            retrieval["decisao_com_citacao_validada"] = bool(
+                entry["origem"] == "ollama" and retrieval.get("referencias_validas")
+                and retrieval["referencias_citadas"]
+            )
         self.decisions.append(audit)
 
     def report(self):

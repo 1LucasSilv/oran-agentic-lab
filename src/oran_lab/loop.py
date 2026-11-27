@@ -68,14 +68,16 @@ def _controlled_actions(simulator: Simulator):
 def run_loop(frame: pd.DataFrame, source: dict, replay_config: ReplayConfig = ReplayConfig(),
              detector_config: DetectorConfig = DetectorConfig(), limits: Limits = Limits(),
              *, controlled: bool = False, agent_config: AgentConfig | None = None, client=None,
-             mcp_reads: int | None = None, mcp_timeout: float = 5) -> dict:
+             mcp_reads: int | None = None, mcp_timeout: float = 5, rag=None) -> dict:
     """Executa o detector, aplica a política e devolve a trilha e o estado serializáveis."""
     detections = list(detect(frame, replay_config, detector_config))
     simulator = Simulator(frame, detections, replay_config.advance, limits)
     initial = simulator.state()
     if controlled and agent_config:
         raise ValueError("A demonstração controlada requer a política Python")
-    agent = AgentSession(agent_config, client) if agent_config else None
+    if rag is not None and not agent_config:
+        raise ValueError("RAG requer o modo Ollama")
+    agent = AgentSession(agent_config, client, rag=rag) if agent_config else None
     if mcp_reads is not None:
         if not agent or type(mcp_reads) is not int or not 0 <= mcp_reads <= 4:
             raise ValueError("MCP requer agente e de 0 a 4 consultas por janela")
@@ -97,6 +99,7 @@ def run_loop(frame: pd.DataFrame, source: dict, replay_config: ReplayConfig = Re
         **({"agente": agent.report()} if agent else {}),
         **({"mcp": {"transporte": "memoria", "sdk": version("mcp"), "consultas_por_janela": mcp_reads,
                     "timeout_s": mcp_timeout}} if mcp_reads is not None else {}),
+        **({"rag": rag.metadata} if rag is not None else {}),
         "versao_formato": 1,
         "fonte": source,
         "linhas": len(frame),
@@ -153,6 +156,24 @@ def _report(result: dict) -> str:
                   f"SDK `{result['mcp']['sdk']}`, transporte em memória. "
                   f"{len(reads)} consultas solicitadas pelo modelo, "
                   f"{sum('resultado' in item for item in reads)} concluídas.", ""]
+    if "rag" in result:
+        records = [(d["janela_id"], d["rag"]) for d in result["agente"]["decisoes"] if "rag" in d]
+        cited = sum(record["decisao_com_citacao_validada"] for _, record in records)
+        total = sum(record["tempo_recuperacao_s"] for _, record in records)
+        lines += ["## Recuperação documental 3GPP", "",
+                  f"{len(records)} janelas avaliadas para recuperação. "
+                  f"{cited} decisões do Ollama com citação validada. A recuperação levou {total:.3f} s.", ""]
+        if result["rag"]["erro_indice"]:
+            lines += [f"Índice indisponível ({result['rag']['erro_indice']}).", ""]
+        for window, record in records:
+            refs = [f"{r['ref']} [{r['documento']} V{r['versao']}, §{r['secao']}, PDF p. "
+                    f"{', '.join(map(str, r['paginas_pdf']))}]({r['url']}) (cosseno {r['score']:.3f})"
+                    for r in record["referencias_apresentadas"]]
+            cited_refs = record["referencias_citadas"]
+            lines.append(f"- Janela {window} · {record['estado']} · "
+                         f"{' / '.join(refs) or 'nenhum trecho apresentado'} · "
+                         f"IDs conferidos {', '.join(cited_refs) if record.get('referencias_validas') and cited_refs else 'nenhum'}.")
+        lines.append("")
     highlighted = [item for item in history if item["validacao"]["estado"] == "recusada"
                    or item["execucao"]["estado"] != "nao_executada"]
     if highlighted:
@@ -186,6 +207,8 @@ def write_results(result: dict, output: Path) -> Path:
 
 
 def main(argv=None):
+    from .rag import CHAT_CONTEXT, CHAT_GENERATION, EMBED_MODEL, INDEX, MIN_SCORE, TOP_K
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("excel", type=Path, nargs="?", help="Planilha .xlsx da série histórica")
     parser.add_argument("--sintetico", action="store_true", help="Executa a queda sintética e as ações controladas")
@@ -199,19 +222,28 @@ def main(argv=None):
     parser.add_argument("--timeout", type=float, default=AgentConfig.timeout)
     parser.add_argument("--temperatura", type=float, default=AgentConfig.temperature)
     parser.add_argument("--seed", type=int, default=AgentConfig.seed)
-    parser.add_argument("--contexto", type=int, default=AgentConfig.num_ctx)
-    parser.add_argument("--geracao", type=int, default=AgentConfig.num_predict)
+    parser.add_argument("--contexto", type=int, help="Tokens de contexto (4096, ou 8192 com RAG)")
+    parser.add_argument("--geracao", type=int, help="Tokens de resposta (256, ou 512 com RAG)")
     parser.add_argument("--max-chamadas", type=int, default=AgentConfig.max_calls)
     parser.add_argument("--falhas-consecutivas", type=int, default=AgentConfig.max_failures)
     parser.add_argument("--selecao", choices=("suspeitas", "todas"), default=AgentConfig.selection)
     parser.add_argument("--mcp", action="store_true", help="Usa ferramentas MCP locais no modo Ollama")
     parser.add_argument("--consultas-mcp", type=int, default=2)
     parser.add_argument("--timeout-mcp", type=float, default=5)
+    parser.add_argument("--rag", action="store_true", help="Acrescenta referências documentais locais ao modo Ollama")
+    parser.add_argument("--indice-rag", type=Path, default=INDEX)
+    parser.add_argument("--modelo-embeddings", default=EMBED_MODEL)
+    parser.add_argument("--top-k-rag", type=int, default=TOP_K)
+    parser.add_argument("--score-minimo-rag", type=float, default=MIN_SCORE)
     args = parser.parse_args(argv)
     if (args.excel is not None) == args.sintetico:
         parser.error("Informe o Excel ou use --sintetico")
     if args.sintetico and (args.tamanho is not None or args.avanco is not None):
         parser.error("O cenário sintético usa janelas fixas de 2 registros")
+    if args.rag and args.modo != "ollama":
+        parser.error("--rag requer --modo ollama")
+    if args.rag and (not 1 <= args.top_k_rag <= 8 or not -1 <= args.score_minimo_rag <= 1):
+        parser.error("--top-k-rag deve estar entre 1 e 8 e --score-minimo-rag entre -1 e 1")
     try:
         if args.sintetico:
             frame, source = _synthetic_frame()
@@ -229,14 +261,25 @@ def main(argv=None):
             subdir = "oficial" if official else "outro_excel"
         agent_config = None
         if args.modo == "ollama":
+            defaults = (CHAT_CONTEXT, CHAT_GENERATION) if args.rag else (AgentConfig.num_ctx, AgentConfig.num_predict)
+            context_default, generation_default = defaults
+            context = args.contexto if args.contexto is not None else context_default
+            generation = args.geracao if args.geracao is not None else generation_default
             agent_config = AgentConfig(model=args.modelo, url=args.api, timeout=args.timeout,
-                                       temperature=args.temperatura, seed=args.seed, num_ctx=args.contexto,
-                                       num_predict=args.geracao, max_calls=args.max_chamadas,
+                                       temperature=args.temperatura, seed=args.seed, num_ctx=context,
+                                       num_predict=generation, max_calls=args.max_chamadas,
                                        max_failures=args.falhas_consecutivas, selection=args.selecao)
+        rag = None
+        if args.rag:
+            from .rag import Embedder, RagSession
+
+            embed_config = AgentConfig(model=args.modelo_embeddings, url=args.api, timeout=args.timeout)
+            rag = RagSession(args.indice_rag, Embedder(embed_config), args.top_k_rag, args.score_minimo_rag)
         result = run_loop(frame, source, config, controlled=args.sintetico and args.modo is None,
                           agent_config=agent_config, mcp_reads=args.consultas_mcp if args.mcp else None,
-                          mcp_timeout=args.timeout_mcp)
-        folder = (Path("results/etapa5/ollama-mcp") if args.mcp else
+                          mcp_timeout=args.timeout_mcp, rag=rag)
+        folder = (Path("results/etapa6") / ("ollama-mcp-rag" if args.mcp else "ollama-rag") if args.rag else
+                  Path("results/etapa5/ollama-mcp") if args.mcp else
                   Path("results/etapa4") / args.modo if args.modo else Path("results/etapa3"))
         report = write_results(result, args.saida or folder / subdir)
     except (ValueError, OSError, BadZipFile) as error:

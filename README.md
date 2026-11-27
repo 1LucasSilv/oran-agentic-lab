@@ -13,6 +13,7 @@ flowchart TD
     Detector --> Python["Política Python"]
     Detector --> Ollama["Agente Ollama local"]
     Ollama <--> MCP["Ferramentas MCP locais (opcionais)"]
+    Normas["Índice 3GPP local (opcional)"] --> Ollama
     Python --> Validador["Validador determinístico"]
     Ollama --> Validador
     MCP --> Validador
@@ -27,10 +28,11 @@ A EDA registra abas, tipos, lacunas e gráficos. O detector usa uma referência 
 | Uso | Requisitos |
 | --- | --- |
 | Instalação e modo Python | CPython 3.11 ou superior com `venv` e `pip`. Use a série 3.13 para reproduzir a referência da CI. O `pip` instala pandas, openpyxl e matplotlib nas versões fixadas. Git serve para obter uma cópia do repositório. |
-| Suíte de testes | Extra `test` (pytest). Instale também o extra `mcp` para executar os testes desse módulo. As planilhas da suíte são sintéticas. |
+| Suíte de testes | Extra `test` (pytest). Inclua `mcp` e `rag` para a cobertura completa. As planilhas e PDFs da suíte são sintéticos. |
 | EDA ou replay oficial | Planilha da revisão auditada e SHA-256 válido. O cenário sintético funciona sem esse download. |
 | Agente local | Ollama, serviço HTTP em loopback e uma tag local instalada. Os exemplos usam `qwen2.5:1.5b`. |
 | Ferramentas MCP | Extra `mcp` (SDK Python oficial). A demonstração por stdio funciona sem Ollama. |
+| RAG 3GPP | Extra `rag` (PyPDF), duas especificações oficiais e Ollama com a tag local de embeddings. Funciona com ou sem MCP. |
 
 Como ponto de partida, use uma CPU de 64 bits com quatro núcleos e 8 GiB de RAM para o modo Python e os testes. Para Ollama com a tag de 1,5 bilhão de parâmetros, prefira 16 GiB de RAM. GPU é opcional. O consumo depende do modelo, da quantização e do contexto.
 
@@ -39,14 +41,14 @@ Como ponto de partida, use uma CPU de 64 bits com quatro núcleos e 8 GiB de RAM
 | Python base | Cerca de 185 MiB na instalação Windows de referência. Reserve 0,5 GiB se precisar instalar o Python. |
 | Ambiente e dependências Python | Cerca de 264 MiB no `.venv` de referência com `[test,mcp]`. Reserve 0,5 GiB para o ambiente e espaço adicional para downloads e temporários do pip. |
 | Ollama (opcional) | No Windows, o instalador requer pelo menos 4 GB para os binários. No Linux e no macOS, confira o tamanho do pacote da sua plataforma e reserve espaço para a instalação e a extração. [Requisitos do Ollama no Windows](https://docs.ollama.com/windows#filesystem-requirements) |
-| Modelos (opcionais) | `qwen2.5:1.5b` ocupa cerca de 986 MB. Some espaço para cada tag que pretende usar e para o download. [Ficha da tag](https://ollama.com/library/qwen2.5:1.5b) |
+| Modelos (opcionais) | `qwen2.5:1.5b` ocupa cerca de 986 MB e `embeddinggemma` cerca de 622 MB. Some espaço para cada tag que pretende usar e para o download. [Qwen](https://ollama.com/library/qwen2.5:1.5b) · [EmbeddingGemma](https://ollama.com/library/embeddinggemma) |
 | Dataset e resultados | A planilha oficial ocupa cerca de 152 KiB. As saídas da validação local ocupavam poucos MiB. Para um lote de experimentos, faça uma execução representativa e multiplique o tamanho de sua saída pelo número de execuções que pretende guardar. |
 
 Para começar com Python, reserve 2 GiB livres incluindo temporários e primeiras saídas. Se usar Ollama, some o runtime e os modelos e verifique o espaço livre nos volumes onde cada componente será armazenado.
 
 | Sistema | Evidência |
 | --- | --- |
-| Windows | Suíte padrão aprovada no GitHub Actions. Testes opcionais validados localmente em Windows 11 AMD64 com Python 3.13.0. |
+| Windows | Suíte padrão da Etapa 5.1 aprovada no GitHub Actions. Etapa 6 validada localmente em Windows 11 AMD64 com Python 3.13.0. |
 | Linux | Suíte padrão da Etapa 5.1 aprovada no runner Ubuntu. Há também evidência local das Etapas 0 a 5. |
 | macOS | Suíte padrão da Etapa 5.1 aprovada no runner macOS. |
 
@@ -154,6 +156,20 @@ oran-loop --sintetico --modo ollama --mcp --max-chamadas 6 --saida results/minha
 
 Para usar o agente sobre o Excel, troque `--sintetico` por `"$arquivo"` e escolha outro `--saida`. Inspecione os registros de proposta, validação e fallback para identificar quais decisões vieram do modelo.
 
+## Acrescentar referências 3GPP ao agente
+
+Com o Ollama ativo, use a tag local de embeddings. Baixe-a com `ollama pull embeddinggemma` se ainda estiver ausente. Os comandos funcionam no PowerShell e no Bash/Zsh.
+
+```sh
+python -m pip install -e ".[test,mcp,rag]"
+oran-rag obter
+oran-rag indexar
+oran-rag verificar
+oran-loop --sintetico --modo ollama --max-chamadas 2 --rag
+```
+
+Acrescente `--mcp` para combinar as ferramentas locais com o RAG. Consulte o [guia RAG](docs/RAG.md) para importação manual dos PDFs, busca avulsa, auditoria e limites de uso.
+
 ## Validar integrações opcionais
 
 A suíte padrão deixa as integrações com o serviço real do Ollama e com subprocesso MCP stdio desativadas. O teste do Ollama usa a tag e a API padrão e requer ambos disponíveis. O teste stdio requer o extra MCP e permissões para subprocesso e pipes.
@@ -179,9 +195,9 @@ ORAN_TEST_MCP_STDIO=1 python -m pytest -q tests/test_mcp.py
 
 ### GitHub Actions
 
-O [workflow Testes](.github/workflows/tests.yml) executa a suíte padrão com Python 3.13 em runners hospedados pelo GitHub para Ubuntu, Windows e macOS. Dispara em pushes para `main`, pull requests destinados a `main` e manualmente. A matriz roda sem dataset oficial, Ollama ou modelos.
+O [workflow Testes](.github/workflows/tests.yml) executa a suíte padrão com Python 3.13 e os extras `test,mcp,rag` em runners hospedados pelo GitHub para Ubuntu, Windows e macOS. Dispara em pushes para `main`, pull requests destinados a `main` e manualmente. A matriz usa fixtures sintéticas para planilhas e PDFs e dispensa Ollama e modelos.
 
-Abra **Actions → Testes**, selecione a execução e abra os logs de cada job. Usuários com acesso de escrita podem abrir **Run workflow**, escolher a branch e rodar a matriz. Erros na preparação do runner, checkout ou acesso a registros de pacotes podem impedir a suíte de iniciar. Se o pytest executar, confira o traceback para localizar o teste e investigar a causa. A execução #1 teve 116 testes aprovados e 2 ignorados em cada runner. [Execução #1](https://github.com/1LucasSilv/oran-agentic-lab/actions/runs/46023193720) · [Como rodar manualmente](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)
+Abra **Actions → Testes**, selecione a execução e abra os logs de cada job. Usuários com acesso de escrita podem abrir **Run workflow**, escolher a branch e rodar a matriz. Erros na preparação do runner, checkout ou acesso a registros de pacotes podem impedir a suíte de iniciar. Se o pytest executar, confira o traceback para localizar o teste e investigar a causa. A execução #1, da Etapa 5.1, teve 116 testes aprovados e 2 ignorados em cada runner. [Execução #1](https://github.com/1LucasSilv/oran-agentic-lab/actions/runs/46023193720) · [Como rodar manualmente](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)
 
 ## Desinstalar o laboratório
 
@@ -202,9 +218,10 @@ O [procedimento detalhado para Windows, Linux e macOS](docs/INSTALACAO.md#limpez
 | `oran-loop --modo python` ou `--modo ollama` | `results/etapa4/<modo>/<origem>/` |
 | `oran-loop --modo ollama --mcp` | `results/etapa5/ollama-mcp/<origem>/` |
 | `python -m oran_lab.mcp_client` | `results/etapa5/stdio.json` |
+| `oran-loop --modo ollama --rag` | `results/etapa6/ollama-rag/<origem>/` ou `results/etapa6/ollama-mcp-rag/<origem>/` com MCP |
 
 O replay e o loop escrevem `resultados.json` e `relatorio.md`. Use `--saida` para preservar cada execução, com diretórios distintos por sistema e configuração. Dados brutos, ambientes e saídas locais ficam fora do Git.
 
 Na execução oficial de referência no Linux, o detector produziu 38 janelas sobre 1.138 registros KPM e zero alertas. O cenário sintético permitiu verificar ações e recusas do simulador. Os experimentos com Ollama e MCP demonstraram propostas, consultas e fallback. Esses resultados descrevem os casos executados. Novas medições dependem do modelo, do runtime e do hardware. [Replay](docs/REPLAY_DETECCAO.md) · [Simulador](docs/ACAO_SIMULADA.md) · [Agente Ollama](docs/AGENTE_OLLAMA.md) · [MCP](docs/MCP.md)
 
-As Etapas 0 a 5 estão aprovadas e a Etapa 5.1 entrega a preparação reproduzível e a matriz de testes. As próximas etapas do plano incluem RAG com referências 3GPP, comparação controlada e consolidação. A Etapa 6 aguarda autorização. [Plano técnico](docs/PLANO_LABORATORIO.md) · [Status](docs/STATUS_PROJETO.md) · [Auditoria da planilha](docs/EDA.md) · [Instalação avançada](docs/INSTALACAO.md)
+As Etapas 0 a 5 estão aprovadas. A Etapa 5.1 entregou a preparação reproduzível e a matriz de testes. A Etapa 6 acrescentou RAG opcional com referências 3GPP. A comparação controlada da Etapa 7 aguarda autorização. [Plano técnico](docs/PLANO_LABORATORIO.md) · [Status](docs/STATUS_PROJETO.md) · [Auditoria da planilha](docs/EDA.md) · [Instalação avançada](docs/INSTALACAO.md)

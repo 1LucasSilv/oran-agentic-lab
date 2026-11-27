@@ -13,13 +13,15 @@ Atualizado em 27 de novembro de 2026.
 | 4 | Aprovada. Agente Ollama com propostas estruturadas, auditoria e fallback Python. |
 | 5 | Aprovada. Ferramentas MCP locais e integração com o agente. |
 | 5.1 | Implementada e validada localmente no Windows. Suíte padrão aprovada nos três runners do GitHub Actions. Documentação de armazenamento e desinstalação disponível. |
-| 6 | RAG 3GPP. Aguarda autorização. |
+| 6 | RAG 3GPP implementado e demonstrado localmente no Windows, incluindo composição com MCP. Validação desta revisão na matriz GitHub pendente. |
+| 7 | Comparação controlada. Aguarda autorização. |
 
 ## Implementação e decisões
 
 - O mesmo núcleo determinístico valida propostas e verifica efeitos no estado do simulador. O agente único usa Ollama em loopback. As consultas MCP do agente são em memória. O cliente de demonstração usa um subprocesso Python por stdio com UTF-8 explícito.
 - A origem, o nome, a revisão e o SHA-256 do dataset oficial são definidos em um módulo comum. O downloader verifica antes de substituir o destino. O diagnóstico consulta versões, recursos e disponibilidade local sem instalar componentes ou baixar recursos.
 - A CI usa Python 3.13 em runners hospedados pelo GitHub para Ubuntu, Windows e macOS. A suíte padrão usa fixtures sintéticas, cobre MCP em memória e deixa as integrações com Ollama real e MCP stdio para execuções opcionais.
+- O RAG opcional usa PDFs de duas revisões oficiais, índice cosseno local e embeddings via Ollama. Os trechos entram sob orçamento antes da inferência final. A auditoria das referências é separada da proposta operacional. [Corpus, configuração e resultados](RAG.md)
 - Cada execução de validação tem saída própria. Os experimentos Linux das etapas anteriores contêm os resultados de referência. [EDA](EDA.md) · [Replay](REPLAY_DETECCAO.md) · [Simulador](ACAO_SIMULADA.md) · [Ollama](AGENTE_OLLAMA.md) · [MCP](MCP.md)
 
 ## Evidência de validação
@@ -57,9 +59,18 @@ O diagnóstico reconheceu a instalação completa e sinalizou dependências, arq
 
 Os artefatos locais da validação estão em `results/etapa5.1/windows/`. As medições do Windows ficam nesse diretório, separado dos experimentos Linux anteriores.
 
+### Etapa 6 no Windows
+
+Com Python 3.13.0, PyPDF 6.10.2 e Ollama 0.40.18, a revisão oficial de cada PDF passou no SHA-256, na verificação da capa e na contagem de páginas. O índice gerou 15 fragmentos de seis cláusulas com vetores de dimensão 768. O índice e os PDFs estão em `data/rag/`. Os artefatos de execução estão em `results/etapa6/windows/`.
+
+No par sintético com o mesmo Qwen, o modo sem RAG registrou o alerta por proposta do modelo. Com RAG, os dois IDs propostos nas janelas 5 e 6 correspondiam aos trechos de entrada. O validador recusou a ação da primeira janela sobre um evento que ainda não existia. O fallback registrou o alerta. Na janela 6, a proposta com citações passou pelo validador e ficou sem efeito adicional no simulador. Com MCP e RAG, houve uma consulta MCP concluída e a decisão final da janela selecionada foi de fallback. [Resultados e protocolo da demonstração](RAG.md#validação-observada)
+
+A suíte padrão da Etapa 6 teve 138 testes aprovados e 2 opcionais ignorados. Com Ollama real e MCP stdio habilitados e `-X utf8=0`, os 140 testes passaram. A instalação editável com `.[test,mcp,rag]` e o `pip check` também passaram.
+
 ## Limitações e pendências
 
 - As integrações opcionais com Ollama e MCP stdio têm evidência local no Windows para a Etapa 5.1. A execução do GitHub Actions cobre a suíte padrão.
 - O detector sinaliza padrões heurísticos. A planilha carece de rótulos de falha e de denominador para interpretar PRB como percentual. A semântica temporal de `Latency` segue indeterminada.
 - Os efeitos verificados pertencem ao simulador. Tempos de inferência dependem de runtime, modelo, cache e hardware. Os casos atuais servem como evidência de funcionamento. Uma conclusão comparativa exige o protocolo controlado do plano.
-- A Etapa 6 é o próximo marco do [plano técnico](PLANO_LABORATORIO.md) e depende de autorização.
+- A matriz GitHub publicada no histórico comprova a Etapa 5.1. A Etapa 6 tem evidência local no Windows e aguarda a execução da nova matriz.
+- A Etapa 7 é o próximo marco do [plano técnico](PLANO_LABORATORIO.md) e depende de autorização.

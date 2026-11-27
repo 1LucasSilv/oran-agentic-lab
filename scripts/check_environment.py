@@ -107,6 +107,7 @@ def main(argv=None) -> int:
     core_ready = check_dependencies([project["name"], *project["dependencies"]], "obrigatório")
     check_dependencies(project["optional-dependencies"]["test"], "opcional para testes")
     check_dependencies(project["optional-dependencies"]["mcp"], "opcional para MCP")
+    check_dependencies(project["optional-dependencies"]["rag"], "opcional para RAG")
     check_dataset(args.dataset)
     check_ollama(config)
     return 0 if core_ready else 1
