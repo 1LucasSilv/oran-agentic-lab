@@ -13,9 +13,10 @@ from .detector import detect
 from .experiment import ChatLedger, LoggedClient, code_identity, dependency_versions, load_average, now, read_json, run_lock
 from .experiment_report import aggregate
 from .loop import propose
-from .rag import digest_json
+from .rag import digest_json, model_tag
 from .simulator import NO_ACTION, REGISTER_ALERT, Simulator
-from .ui_runs import (ARCHITECTURES, ID, RunConfig, _active_run, active_experiment, await_lock,
+from .ui_resources import TAG
+from .ui_runs import (ARCHITECTURES, ID, TERMINAL, RunConfig, _active_run, active_experiment, await_lock,
                       data_source, local_path, prepare, publish, runs_root, set_status, spawn_worker, status, worker_alive)
 
 
@@ -30,6 +31,7 @@ class Comparison:
     mode: str = "controlada"
     target: int = 1
     purpose: str = "comparacao"
+    model_treatments: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self):
         if (not self.sources or len(set(self.sources)) != len(self.sources) or len(self.sources) > 12
@@ -40,25 +42,45 @@ class Comparison:
                 or type(self.max_chat) is not int or not 0 <= self.max_chat <= 2000
                 or self.mode not in ("controlada", "ciclo_completo") or self.purpose not in ("comparacao", "exploracao")
                 or type(self.target) is not int or self.target < 1
-                or len(self.sources) * len(self.treatments) * len(self.seeds) * self.repetitions > 500):
+                or len(self.sources) * max(len(self.treatments), len(self.model_treatments) + ("A" in self.treatments))
+                * len(self.seeds) * self.repetitions > 500):
             raise ValueError("Parâmetros inválidos ou comparação acima do limite de 500 sessões.")
         if set(self.treatments) - {"A"} and self.template.agent is None:
-            raise ValueError("Escolha o gerador comum aos tratamentos B–E.")
+            raise ValueError("Defina os parâmetros comuns de inferência.")
         if set(self.treatments) & {"C", "E"} and not self.template.index:
             raise ValueError("Escolha um índice comum aos tratamentos com RAG.")
         if set(self.treatments) & {"D", "E"} and not self.template.mcp_reads:
             raise ValueError("Defina as condições MCP.")
+        if self.model_treatments:
+            explicit = set()
+            for architecture, tag in self.model_treatments:
+                if (architecture not in "BCDE" or len(architecture) != 1 or not TAG.fullmatch(tag)
+                        or tag.endswith((":cloud", "-cloud"))):
+                    raise ValueError("Cada tratamento deve usar uma arquitetura B–E e uma tag local válida.")
+                explicit.add((architecture, model_tag(tag)))
+            if len(explicit) != len(self.model_treatments) or {arch for arch, _ in explicit} != set(self.treatments) - {"A"}:
+                raise ValueError("Escolha pelo menos um modelo por arquitetura, sem repetir a mesma combinação.")
 
     @classmethod
     def from_dict(cls, data):
         return cls(**{**data, "template": RunConfig.from_dict(data["template"]),
+                      "model_treatments": tuple(tuple(item) for item in data.get("model_treatments", ())),
                       **{key: tuple(data[key]) for key in ("sources", "treatments", "seeds")}})
 
 
-def treatment(config, source, method, seed, budget):
+def treatment_entries(config):
+    if not config.model_treatments:
+        return [(arch, arch, config.template.agent.model if arch != "A" else None) for arch in config.treatments]
+    entries = [("A", "A", None)] if "A" in config.treatments else []
+    for n, (arch, tag) in enumerate(config.model_treatments, 1):
+        entries.append((f"{arch}-{n:02d}", arch, model_tag(tag)))
+    return entries
+
+
+def treatment(config, source, method, seed, budget, model):
     template = config.template
     return replace(template, architecture=method, source=source, start_paused=False,
-                   agent=None if method == "A" else replace(template.agent, seed=seed, selection="todas",
+                   agent=None if method == "A" else replace(template.agent, model=model, seed=seed, selection="todas",
                                                            max_calls=budget, max_failures=budget + 1),
                    mcp_reads=template.mcp_reads if method in "DE" else None,
                    index=template.index if method in "CE" else None)
@@ -98,6 +120,7 @@ def collect_detections(frame, config, last=None):
 
 def plan_comparison(config, workspace, *, source_loader=data_source):
     sources, jobs = {}, []
+    entries = treatment_entries(config)
     for source in config.sources:
         common = replace(config.template, source=source)
         frame, metadata = source_loader(common, workspace)
@@ -116,31 +139,38 @@ def plan_comparison(config, workspace, *, source_loader=data_source):
                            "estado_inicial": initial, "janelas": windows}
         for repeat in range(1, config.repetitions + 1):
             for seed in config.seeds:
-                for method in config.treatments:
+                for label, method, model in entries:
                     budget = len(windows) * (0 if method == "A" else 2 if method in "DE" else 1)
-                    jobs.append({"id": f"sessao-{len(jobs) + 1:04d}", "caso": source, "configuracao": method,
+                    jobs.append({"id": f"sessao-{len(jobs) + 1:04d}", "caso": source, "configuracao": label,
                                  "seed": seed, "repeticao": repeat, "janelas": windows, "max_chat": budget,
-                                 "tratamento": asdict(treatment(config, source, method, seed, budget))})
+                                 "tratamento": asdict(treatment(config, source, method, seed, budget, model))})
     Random(42).shuffle(jobs)
-    plan = {"versao": 1, "codigo": code_identity(), "configuracao": asdict(config), "fontes": sources,
+    plan = {"versao": 2, "codigo": code_identity(), "configuracao": asdict(config), "fontes": sources,
+            "tratamentos": {key: {"arquitetura": method, "modelo": model} for key, method, model in entries},
             "execucoes": jobs, "n_sessoes": len(jobs), "n_oportunidades": sum(len(job["janelas"]) for job in jobs),
             "max_chat": sum(job["max_chat"] for job in jobs), "ordem_seed": 42}
     # Normalize tuples to the JSON representation before comparison with persisted manifests.
     plan["configuracao"].update(sources=list(config.sources), treatments=list(config.treatments), seeds=list(config.seeds))
+    plan["configuracao"]["model_treatments"] = [list(item) for item in config.model_treatments]
     return {**plan, "sha256": digest_json(plan)}
 
 
 def preflight(plan, workspace, prepare_run=prepare):
     resources = {}
+    generators = {}
     for job in plan["execucoes"]:
         key = f"{job['caso']}/{job['configuracao']}"
         if key not in resources:
             resources[key] = prepare_run(RunConfig.from_dict(job["tratamento"]), workspace)[2]
         if resources[key]["fonte"] != plan["fontes"][job["caso"]]["origem"]:
             raise ValueError("A origem mudou desde o planejamento.")
-    generators = {entry["gerador"]["digest"] for entry in resources.values() if "gerador" in entry}
+        generator = resources[key].get("gerador")
+        if generator:
+            tag = model_tag(job["tratamento"]["agent"]["model"])
+            if generators.setdefault(tag, generator["digest"]) != generator["digest"]:
+                raise ValueError(f"A identidade de {tag} mudou durante a pré-verificação.")
     indices = {entry["rag"]["arquivo_sha256"] for entry in resources.values() if "rag" in entry}
-    if len(generators) > 1 or len(indices) > 1:
+    if len(indices) > 1:
         raise ValueError("Os recursos comuns mudaram durante a pré-verificação.")
     return resources
 
@@ -168,9 +198,20 @@ def start_comparison(plan, workspace, *, confirmed=False, request_id=None, spawn
         if _active_run(workspace) or active_experiment(workspace) or worker_alive(workspace):
             raise ValueError("Já existe uma execução ou manutenção ativa.")
         resources = preflight(plan, workspace, prepare_run)
+        treatments = {}
+        for job in plan["execucoes"]:
+            key = job["configuracao"]
+            if key not in treatments:
+                params = {k: v for k, v in job["tratamento"].items() if k not in ("source", "start_paused")}
+                if params["agent"]:
+                    params["agent"] = {k: v for k, v in params["agent"].items()
+                                       if k not in ("seed", "max_calls", "max_failures")}
+                treatments[key] = {**plan["tratamentos"][key], "parametros": params,
+                                   "gerador": resources[f"{job['caso']}/{key}"].get("gerador")}
         publish(directory / "plano.json", plan)
         publish(directory / "manifesto.json", {"id": identifier, "plano_sha256": plan["sha256"], "inicio_utc": now(),
-                                               "versoes": dependency_versions(), "recursos": resources})
+                                               "versoes": dependency_versions(), "recursos": resources,
+                                               "tratamentos": treatments})
         set_status(directory, "iniciando", concluidas=0, falhas=0, total=plan["n_sessoes"], chat=0)
         publish(root / "experimento-atual.json", {"id": identifier})
         try:
@@ -188,7 +229,20 @@ def expectation(source, window):
     return None
 
 
-def execute_session(job, workspace, plan, resources, folder, ledger, prepare_run):
+def interruption_requested(directory):
+    return (directory / "interrupcao.json").is_file()
+
+
+def request_interruption(workspace, identifier):
+    directory = experiment_path(workspace, identifier)
+    with await_lock(directory / "controle"):
+        if status(directory)["estado"] in TERMINAL:
+            raise ValueError("O experimento já encerrou.")
+        if not interruption_requested(directory):
+            publish(directory / "interrupcao.json", {"data_utc": now()})
+
+
+def execute_session(job, workspace, plan, resources, folder, ledger, prepare_run, should_stop):
     config = RunConfig.from_dict(job["tratamento"])
     frame, source, observed, client, rag = prepare_run(config, workspace)
     if observed != resources:
@@ -206,7 +260,10 @@ def execute_session(job, workspace, plan, resources, folder, ledger, prepare_run
     publish(folder / "eventos/preparacao.json", {"estado_inicial": initial, "historico": simulator.history(),
                                                "residencia": agent.client.residency() if agent else None})
     catalog = {d["janela"]["id"]: d for d in detections}
+    completed = 0
     for number in windows:
+        if should_stop():
+            break
         start = perf_counter()
         detection = catalog[number]
         before = simulator.state()
@@ -226,7 +283,10 @@ def execute_session(job, workspace, plan, resources, folder, ledger, prepare_run
                 {"janela": number, "detector": detection, "estado_anterior": before, "estado_posterior": simulator.state(),
                  "historico": simulator.history()[offset:], "agente": agent.decisions[-1] if agent else None,
                  "expectativa": expectation(source, number), "tempo_s": perf_counter() - start})
-    return {"estado": "concluida", "residencia_final": agent.client.residency() if agent else None, "carga": load_average()}
+        completed += 1
+    return {"estado": "concluida" if completed == len(windows) else "interrompida",
+            "janelas_concluidas": completed, "residencia_final": agent.client.residency() if agent else None,
+            "carga": load_average()}
 
 
 def run_worker(workspace, identifier, *, prepare_run=prepare, report=aggregate):
@@ -249,21 +309,33 @@ def run_worker(workspace, identifier, *, prepare_run=prepare, report=aggregate):
                     == digest_json({key: value for key, value in plan.items() if key != "sha256"})):
                 raise ValueError("O plano congelado ou suas dependências foram alterados.")
             ledger = ChatLedger(directory, config.max_chat)
-            progress.update(concluidas=0, falhas=0, total=plan["n_sessoes"], chat=ledger.used)
+            progress.update(concluidas=0, falhas=0, interrompidas=0, total=plan["n_sessoes"], chat=ledger.used)
             set_status(directory, "executando", **progress)
+            state = "concluida"
+
+            def should_stop():
+                return interruption_requested(directory)
+
             for job in plan["execucoes"]:
+                if should_stop():
+                    state = "interrompida"
+                    break
                 folder = directory / "execucoes" / job["id"]
                 try:
                     result = execute_session(job, workspace, plan, manifest["recursos"][f"{job['caso']}/{job['configuracao']}"],
-                                             folder, ledger, prepare_run)
+                                             folder, ledger, prepare_run, should_stop)
                 except Exception as error:
                     result = {"estado": "falha", "fase_falha": "durante_execucao", "erro": f"{type(error).__name__}: {error}"}
                 publish(folder / "resultado.json", result)
-                progress["concluidas" if result["estado"] == "concluida" else "falhas"] += 1
                 progress["chat"] = ledger.used
+                if result["estado"] == "interrompida":
+                    progress["interrompidas"] += 1
+                    state = "interrompida"
+                    break
+                progress["concluidas" if result["estado"] == "concluida" else "falhas"] += 1
                 set_status(directory, "executando", **progress)
             report(directory)
-            set_status(directory, "concluida", **progress)
+            set_status(directory, state, **progress)
         except Exception as error:
             set_status(directory, "falha", erro=f"{type(error).__name__}: {error}", **progress)
 

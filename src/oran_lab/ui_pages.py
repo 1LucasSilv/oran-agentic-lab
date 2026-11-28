@@ -21,14 +21,17 @@ from oran_lab.ollama import AgentConfig
 from oran_lab.rag import Embedder, model_tag
 from oran_lab.replay import ReplayConfig
 from oran_lab.simulator import Limits, NO_ACTION, REGISTER_ALERT
-from oran_lab.ui_experiments import Comparison, experiment_path, list_experiments, plan_comparison, start_comparison
+from oran_lab.ui_experiments import (
+    Comparison, experiment_path, interruption_requested, list_experiments, plan_comparison, request_interruption,
+    start_comparison,
+)
 from oran_lab.ui_resources import (
     FIELDS, PRESET_ID, SOURCE_ID, audit_dataset, corpus_status, create_index, delete_model, import_dataset,
     inspect_index, inventory, list_resources, load_preset, pull_model, query_index, save_preset, save_scenario,
     import_preset, local_path,
     synthetic_frame, upload_frames,
 )
-from oran_lab.ui_runs import ARCHITECTURES, SOURCES, RunConfig, active_experiment, available_indices, status
+from oran_lab.ui_runs import ARCHITECTURES, SOURCES, RunConfig, TERMINAL, active_experiment, available_indices, status
 
 ERRORS = (ValueError, OSError, ImportError, HTTPException, InvalidFileException, KeyError, TypeError)
 
@@ -86,58 +89,58 @@ def hardware_details():
                f"{processor_name() or 'CPU não declarada'} · RAM física {gib(physical_memory())}")
 
 
-def config_fields(architecture, source, model, index, defaults, *, experimental=False):
+def config_fields(architecture, source, model, index, defaults, *, key, experimental=False):
     """Campos comuns aos fluxos operacional e experimental."""
     st.subheader("Replay e detector")
     x, y = st.columns(2)
     size = x.number_input("Tamanho da janela (registros)", 1, 4096, defaults.replay.size,
-                          help="Número máximo de registros consecutivos por janela.")
+                          help="Número máximo de registros consecutivos por janela.", key=f"{key}/size")
     stride = y.number_input("Avanço do replay (registros)", 1, 4096, defaults.replay.advance,
-                            help="Distância entre janelas. Lacunas de Register iniciam outro segmento.")
-    partial = st.checkbox("Incluir janelas incompletas", value=defaults.replay.include_partial)
+                            help="Distância entre janelas. Lacunas de Register iniciam outro segmento.", key=f"{key}/stride")
+    partial = st.checkbox("Incluir janelas incompletas", value=defaults.replay.include_partial, key=f"{key}/partial")
     x, y, z = st.columns(3)
     reference = x.number_input("Janelas de referência", 1, 100, defaults.detector.reference_windows,
-                               help="Quantidade de janelas anteriores usada na linha de base.")
-    threshold = y.number_input("Queda mínima de throughput (%)", 0.01, 100.0, defaults.detector.throughput_drop * 100)
-    persistence = z.number_input("Janelas de persistência", 1, 100, defaults.detector.persistence)
+                               help="Quantidade de janelas anteriores usada na linha de base.", key=f"{key}/reference")
+    threshold = y.number_input("Queda mínima de throughput (%)", 0.01, 100.0, defaults.detector.throughput_drop * 100, key=f"{key}/threshold")
+    persistence = z.number_input("Janelas de persistência", 1, 100, defaults.detector.persistence, key=f"{key}/persistence")
     x, y = st.columns(2)
     coverage = x.number_input("Cobertura mínima (%)", 0.01, 100.0, defaults.detector.min_coverage * 100,
-                              help="Fração de amostras válidas exigida para cada métrica.")
-    prb = y.number_input("Tolerância de queda do PRB (%)", 0.0, 100.0, defaults.detector.prb_tolerance * 100)
+                              help="Fração de amostras válidas exigida para cada métrica.", key=f"{key}/coverage")
+    prb = y.number_input("Tolerância de queda do PRB (%)", 0.0, 100.0, defaults.detector.prb_tolerance * 100, key=f"{key}/prb")
     with st.expander("Limites do simulador"):
         x, y, z = st.columns(3)
-        history = x.number_input("Tamanho máximo do histórico", 1, 4096, defaults.limits.max_history_size)
-        budget = y.number_input("Orçamento de registros adicionais", 0, 100000, defaults.limits.history_budget)
-        minimum = z.number_input("Avanço mínimo de inspeção", 1, 4096, defaults.limits.min_inspection_stride)
+        history = x.number_input("Tamanho máximo do histórico", 1, 4096, defaults.limits.max_history_size, key=f"{key}/history")
+        budget = y.number_input("Orçamento de registros adicionais", 0, 100000, defaults.limits.history_budget, key=f"{key}/budget")
+        minimum = z.number_input("Avanço mínimo de inspeção", 1, 4096, defaults.limits.min_inspection_stride, key=f"{key}/minimum")
     agent = defaults.agent or AgentConfig(num_ctx=8192, num_predict=512)
     if architecture != "A":
         with st.expander("Inferência Ollama", expanded=True):
             x, y, z = st.columns(3)
-            temperature = x.number_input("Temperatura", 0.0, 2.0, float(agent.temperature), 0.05)
-            seed = agent.seed if experimental else y.number_input("Semente operacional", -2147483648, 2147483647, agent.seed)
-            timeout = z.number_input("Timeout de inferência (s)", 1.0, 600.0, float(agent.timeout))
+            temperature = x.number_input("Temperatura", 0.0, 2.0, float(agent.temperature), 0.05, key=f"{key}/temperature")
+            seed = agent.seed if experimental else y.number_input("Semente operacional", -2147483648, 2147483647, agent.seed, key=f"{key}/seed")
+            timeout = z.number_input("Timeout de inferência (s)", 1.0, 600.0, float(agent.timeout), key=f"{key}/timeout")
             x, y, z = st.columns(3)
             context = x.number_input("Contexto (tokens)", 512, 131072, agent.num_ctx, 128,
-                                     help="Inclui evidências, instruções, schema e espaço reservado para geração.")
-            generation = y.number_input("Geração máxima (tokens)", 1, 8192, agent.num_predict)
+                                     help="Inclui evidências, instruções, schema e espaço reservado para geração.", key=f"{key}/context")
+            generation = y.number_input("Geração máxima (tokens)", 1, 8192, agent.num_predict, key=f"{key}/generation")
             calls, failures, selection = agent.max_calls, agent.max_failures, "todas"
             if not experimental:
-                calls = z.number_input("Orçamento operacional de chat", 0, 4096, agent.max_calls)
-                failures = st.number_input("Falhas consecutivas antes de fallback preventivo", 1, 4096, agent.max_failures)
+                calls = z.number_input("Orçamento operacional de chat", 0, 4096, agent.max_calls, key=f"{key}/calls")
+                failures = st.number_input("Falhas consecutivas antes de fallback preventivo", 1, 4096, agent.max_failures, key=f"{key}/failures")
                 selection = st.selectbox("Janelas elegíveis", ("suspeitas", "todas"), index=int(agent.selection == "todas"),
-                                         format_func=lambda x: "Somente suspeitas" if x == "suspeitas" else "Todas")
+                                         format_func=lambda x: "Somente suspeitas" if x == "suspeitas" else "Todas", key=f"{key}/selection")
     reads, mcp_timeout, top_k, min_score = None, 5, 2, 0.35
     if architecture in "DE":
         with st.expander("Consultas MCP"):
             x, y = st.columns(2)
-            reads = x.number_input("Limite de consultas por janela", 1, 4, defaults.mcp_reads or 1)
-            mcp_timeout = y.number_input("Timeout MCP (s)", 0.1, 120.0, float(defaults.mcp_timeout))
+            reads = x.number_input("Limite de consultas por janela", 1, 4, defaults.mcp_reads or 1, key=f"{key}/reads")
+            mcp_timeout = y.number_input("Timeout MCP (s)", 0.1, 120.0, float(defaults.mcp_timeout), key=f"{key}/mcp_timeout")
     if architecture in "CE":
         with st.expander("Recuperação RAG"):
             x, y = st.columns(2)
-            top_k = x.number_input("Top-K", 1, 8, defaults.top_k)
-            min_score = y.number_input("Similaridade mínima", -1.0, 1.0, float(defaults.min_score), 0.05)
-    paused = False if experimental else st.checkbox("Iniciar em pausa", value=defaults.start_paused)
+            top_k = x.number_input("Top-K", 1, 8, defaults.top_k, key=f"{key}/top_k")
+            min_score = y.number_input("Similaridade mínima", -1.0, 1.0, float(defaults.min_score), 0.05, key=f"{key}/min_score")
+    paused = False if experimental else st.checkbox("Iniciar em pausa", value=defaults.start_paused, key=f"{key}/paused")
 
     def build():
         options = AgentConfig(model=model, url=agent.url, seed=seed, num_ctx=context, num_predict=generation,
@@ -448,7 +451,7 @@ def experiment_status(workspace):
         active_experiment(workspace)
         records = {item["id"]: item for item in list_experiments(workspace)}
     identifier = st.selectbox("Experimento registrado", records, index=0 if records else None,
-                              format_func=lambda k: f"{k[:12]} · {records[k]['inicio_utc'][:19]} UTC")
+                              format_func=lambda k: f"{k[:12]} · {records[k]['inicio_utc'][:19]} UTC", key="draft/experiment_status")
     if identifier:
         directory = experiment_path(workspace, identifier)
         snapshot = status(directory)
@@ -456,10 +459,23 @@ def experiment_status(workspace):
         a.metric("Estado", snapshot["estado"])
         b.metric("Sessões concluídas", snapshot.get("concluidas", 0))
         c.metric("Chamadas reservadas", sum(1 for _ in directory.glob("execucoes/*/chat/*-inicio.json")))
-        complete = snapshot.get("concluidas", 0) + snapshot.get("falhas", 0)
+        if snapshot["estado"] not in TERMINAL:
+            pending = interruption_requested(directory)
+            if st.button("Interromper experimento", disabled=pending):
+                try:
+                    request_interruption(workspace, identifier)
+                    pending = True
+                except ERRORS as error:
+                    st.warning(str(error))
+            if pending:
+                st.info("Interrupção solicitada. A janela atual pode terminar, incluindo uma chamada HTTP em curso.")
+            else:
+                st.caption("A interrupção é aplicada entre janelas ou sessões. Uma chamada HTTP em curso pode precisar terminar.")
+        complete = snapshot.get("concluidas", 0) + snapshot.get("falhas", 0) + snapshot.get("interrompidas", 0)
         if snapshot.get("total"):
             st.progress(complete / snapshot["total"],
-                        text=f"{complete}/{snapshot['total']} sessões registradas · {snapshot.get('falhas', 0)} falhas")
+                        text=f"{complete}/{snapshot['total']} sessões registradas · {snapshot.get('falhas', 0)} falhas"
+                             f" · {snapshot.get('interrompidas', 0)} interrompidas")
         if snapshot.get("erro"):
             st.error(snapshot["erro"])
         completed_files = list((directory / "execucoes").glob("*/resultado.json"))
@@ -481,40 +497,58 @@ def experiments_page(workspace):
     experiment_status(workspace)
     st.subheader("Planejar comparação")
     sources = source_choices(workspace)
-    selected_sources = st.multiselect("Fontes validadas", sources, default=["demonstracao"], format_func=sources.get)
-    treatments = st.multiselect("Tratamentos", ARCHITECTURES, default=["A"], format_func=lambda key: f"{key} · {ARCHITECTURES[key]}")
+    selected_sources = st.multiselect("Fontes validadas", sources, default=["demonstracao"], format_func=sources.get,
+                                      key="draft/exp/sources")
+    treatments = st.multiselect("Arquiteturas", ARCHITECTURES, default=["A"],
+                               format_func=lambda key: f"{key} · {ARCHITECTURES[key]}", key="draft/exp/architectures")
     index = model = None
-    if set(treatments) & set("BCDE"):
+    assignments = []
+    llm_architectures = [arch for arch in treatments if arch != "A"]
+    ready = bool(selected_sources and treatments)
+    if llm_architectures:
         _, rows, error = local_inventory()
         tags = generator_tags(rows)
-        model = st.selectbox("Modelo comum B–E", tags, index=choose(tags, st.session_state.get("modelo_preferido")))
+        default = choose(tags, st.session_state.get("modelo_preferido"))
+        design = st.radio("Geradores", ("Modelo comum", "Modelos por arquitetura"), horizontal=True, key="draft/exp/design")
+        if design == "Modelo comum":
+            model = st.selectbox("Modelo comum B–E", tags, index=default, key="draft/exp/model")
+            ready &= bool(model)
+        else:
+            for arch in llm_architectures:
+                selected = st.multiselect(f"Geradores para {arch} · {ARCHITECTURES[arch]}", tags,
+                                          default=[tags[default]] if default is not None else [],
+                                          key=f"draft/exp/models-{arch}")
+                assignments.extend((arch, tag) for tag in selected)
+                ready &= bool(selected)
+            model = assignments[0][1] if assignments else None
         if error:
             st.warning(error)
-    if set(treatments) & set("CE"):
+    rag = bool(set(treatments) & set("CE"))
+    mcp = bool(set(treatments) & set("DE"))
+    if rag:
         indices = available_indices(workspace)
-        index = st.selectbox("Índice comum C e E", indices, index=0 if indices else None)
-    mode = "E" if set(treatments) & set("CE") and set(treatments) & set("DE") else (
-        "C" if set(treatments) & set("CE") else "D" if set(treatments) & set("DE") else "B" if model else "A")
-    with st.form(f"comparison-{mode}"):
-        decision_mode = st.radio("Regime", ("controlada", "ciclo_completo"), horizontal=True,
-                                 format_func=lambda key: "Decisão controlada" if key == "controlada" else "Ciclo completo")
-        purpose = st.radio("Finalidade", ("comparacao", "exploracao"), horizontal=True,
-                           format_func=lambda key: "Comparação com variáveis fixas" if key == "comparacao" else "Exploração livre")
-        a, b, c, d = st.columns(4)
-        seeds = a.text_input("Sementes separadas por vírgula", "42", max_chars=160)
-        repetitions = b.number_input("Repetições por semente", 1, 20, 1)
-        cap = c.number_input("Teto global de chat", 0, 2000, 12)
-        target = d.number_input("Janela-alvo (decisão controlada)", 1, 100000, 5)
-        st.caption("O experimento oferece decisão em todas as janelas autorizadas. MCP pode usar uma chamada de seleção adicional.")
-        factory = config_fields(mode, selected_sources[0] if selected_sources else "demonstracao", model, index,
-                                RunConfig(), experimental=True)
-        preview = st.form_submit_button("Gerar plano sem inferência", type="primary")
+        index = st.selectbox("Índice comum C e E", indices, index=0 if indices else None, key="draft/exp/index")
+        ready &= bool(index)
+    mode = "E" if rag and mcp else "C" if rag else "D" if mcp else "B" if llm_architectures else "A"
+    decision_mode = st.radio("Regime", ("controlada", "ciclo_completo"), horizontal=True, key="draft/exp/mode",
+                             format_func=lambda key: "Decisão controlada" if key == "controlada" else "Ciclo completo")
+    purpose = st.radio("Finalidade", ("comparacao", "exploracao"), horizontal=True, key="draft/exp/purpose",
+                       format_func=lambda key: "Comparação com variáveis fixas" if key == "comparacao" else "Exploração livre")
+    a, b, c, d = st.columns(4)
+    seeds = a.text_input("Sementes separadas por vírgula", "42", max_chars=160, key="draft/exp/seeds")
+    repetitions = b.number_input("Repetições por semente", 1, 20, 1, key="draft/exp/repetitions")
+    cap = c.number_input("Teto global de chat", 0, 2000, 12, key="draft/exp/cap")
+    target = d.number_input("Janela-alvo (decisão controlada)", 1, 100000, 5, key="draft/exp/target")
+    st.caption("MCP pode usar uma chamada de seleção adicional por janela. Inferência, replay e limites usam parâmetros comuns.")
+    factory = config_fields(mode, selected_sources[0] if selected_sources else "demonstracao", model, index,
+                            RunConfig(), key="draft/exp/fields", experimental=True)
+    preview = st.button("Gerar plano sem inferência", type="primary", disabled=not ready)
     if preview:
         st.session_state.pop("plano_ui", None)
         try:
             config = Comparison(factory(), tuple(selected_sources), tuple(treatments),
                                 tuple(int(part.strip()) for part in seeds.split(",")), repetitions, cap,
-                                decision_mode, target, purpose)
+                                decision_mode, target, purpose, tuple(assignments))
             st.session_state["plano_ui"] = plan_comparison(config, workspace)
             st.session_state["plano_ui_id"] = uuid4().hex
         except ERRORS as exc:
@@ -526,13 +560,17 @@ def experiments_page(workspace):
         a.metric("Sessões", plan["n_sessoes"])
         b.metric("Oportunidades", plan["n_oportunidades"])
         c.metric("Teto planejado de chat", plan["max_chat"])
-        st.write("Variáveis comuns fixadas no plano. Tratamentos variam pela política, acesso MCP e recuperação RAG.")
-        jobs = {job["configuracao"]: job["tratamento"] for job in plan["execucoes"]}
+        within_budget = plan["max_chat"] <= plan["configuracao"]["max_chat"]
+        if not within_budget:
+            st.warning("O teto planejado excede o orçamento. Ajuste o plano antes de executar.")
+        st.write("O quadro identifica cada tratamento. A pré-verificação registra os digests antes de iniciar.")
+        st.dataframe([{"Tratamento": label, "Arquitetura": spec["arquitetura"], "Gerador": spec["modelo"] or "Python"}
+                      for label, spec in plan["tratamentos"].items()], hide_index=True, width="stretch")
         with st.expander("Parâmetros congelados, fontes e tratamentos"):
-            st.json({"configuracao": plan["configuracao"], "fontes": plan["fontes"], "tratamentos": jobs}, expanded=False)
+            st.json({"configuracao": plan["configuracao"], "fontes": plan["fontes"], "tratamentos": plan["tratamentos"]}, expanded=False)
         with st.form(f"launch-{plan['sha256']}"):
             confirmed = st.checkbox("Autorizo iniciar exatamente este plano e seu teto de chamadas.")
-            submitted = st.form_submit_button("Executar plano")
+            submitted = st.form_submit_button("Executar plano", disabled=not within_budget)
         if submitted:
             try:
                 identifier = start_comparison(plan, workspace, confirmed=confirmed,

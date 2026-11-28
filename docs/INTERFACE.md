@@ -23,6 +23,8 @@ oran-ui
 
 Abra `http://127.0.0.1:8501` no navegador. Use `oran-ui --porta 8502` se a porta padrão estiver em uso. O lançador mantém a escuta em loopback. O extra instala Streamlit 1.67.0 e Plotly 6.6.0. [Streamlit no PyPI](https://pypi.org/project/streamlit/1.67.0/) · [Plotly no PyPI](https://pypi.org/project/plotly/6.6.0/)
 
+A barra lateral começa com 250 px em telas largas, usa ícones Material e mantém os grupos Laboratório, Pesquisa e Recursos visíveis enquanto expandida. A página atual fica em turquesa escuro. O painel inferior consulta a disponibilidade do Ollama, de geradores e índices compatíveis e a atividade do worker. A barra usa o recolhimento nativo. O Streamlit 1.67 oferece largura inicial de 200 a 600 px e recolhimento total. Um trilho permanente de 56 a 72 px com ícones exigiria personalizar o comportamento interno do framework. Os controles das páginas usam widgets nativos. Seleções e rascunhos operacionais e experimentais são mantidos durante a navegação na mesma sessão do navegador. [Navegação do Streamlit](https://docs.streamlit.io/develop/api-reference/navigation/st.navigation) · [Configuração da sidebar](https://docs.streamlit.io/develop/api-reference/configuration/st.set_page_config)
+
 Para usar todos os modos e testar:
 
 ```sh
@@ -65,6 +67,10 @@ Em execuções instrumentadas, o agente verifica o orçamento antes de enviar o 
 ## Planejar experimentos
 
 Na página **Experimentos**, escolha fontes, tratamentos, janelas, sementes, repetições e orçamento. **Gerar plano sem inferência** calcula sessões, oportunidades e teto de chat e apresenta os parâmetros fixados. Confirme o plano para executar. A pré-verificação consulta os modelos e o índice antes de iniciar o worker. A página acompanha reservas de chat e sessões gravadas, incluindo falhas.
+
+Em **Geradores**, escolha **Modelo comum** para a comparação A–E ou **Modelos por arquitetura** para selecionar uma ou mais tags em cada arquitetura. Por exemplo, selecione E e duas tags para comparar dois geradores com o mesmo MCP e RAG. O plano atribui um ID a cada tratamento e o manifesto grava o digest observado na pré-verificação. Os parâmetros comuns são congelados, e as variantes compartilham o mesmo protocolo de janela e orçamento por oportunidade.
+
+Use **Interromper experimento** na execução ativa. A solicitação é persistida e o worker para antes da próxima janela ou sessão. Uma chamada HTTP em curso pode precisar terminar para que a janela atual seja gravada. Os relatórios incluem janelas avaliadas, sessões interrompidas e oportunidades pendentes. A interrupção encerra essa execução e conserva as chamadas reservadas.
 
 Em decisão controlada, cada fonte começa pela mesma janela autorizada e pelo mesmo estado preparado pela política Python. Em ciclo completo, cada sessão começa no início do replay, evolui o próprio estado e tem uma oportunidade por janela. O replay segue o avanço configurado. Exploração livre identifica comparações ad hoc. A finalidade declarada e a configuração real ficam no plano. Consulte o [protocolo configurável](EXPERIMENTOS.md#experimentos-configuráveis-na-interface).
 

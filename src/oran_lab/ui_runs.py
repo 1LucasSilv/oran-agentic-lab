@@ -101,12 +101,16 @@ def available_indices(workspace):
                   if FILENAME.fullmatch(p.name) and p.is_file() and not p.is_symlink())
 
 
-def capabilities(client, tag):
+def model_details(client, tag):
     status, raw = client.request("/api/show", {"model": tag})
     if status != 200:
         raise ValueError(f"Ollama não confirmou o modelo {tag} (HTTP {status}).")
     info = strict_json(raw)
-    return info.get("capabilities", []) if isinstance(info, dict) else []
+    return info if isinstance(info, dict) else {}
+
+
+def capabilities(client, tag):
+    return model_details(client, tag).get("capabilities", [])
 
 
 def discover_models(client=None):
@@ -139,9 +143,14 @@ def prepare(config, workspace, *, client_factory=OllamaClient, rag_factory=RagSe
             raise ValueError("O serviço Ollama local está indisponível.")
         if not re.fullmatch("[a-f0-9]{64}", info.get("digest") or ""):
             raise ValueError("O modelo gerador selecionado está indisponível ou sem digest válido.")
-        if "completion" not in capabilities(client, config.agent.model):
+        details = model_details(client, config.agent.model)
+        if "completion" not in details.get("capabilities", []):
             raise ValueError("O modelo selecionado não oferece geração de texto.")
-        metadata["gerador"] = {"tag": model_tag(config.agent.model), **info}
+        model_info = details.get("model_info") or {}
+        family = details.get("details") or {}
+        metadata["gerador"] = {"tag": model_tag(config.agent.model), **info,
+                               "arquitetura_modelo": model_info.get("general.architecture", family.get("family")),
+                               "parametros_modelo": model_info.get("general.parameter_count", family.get("parameter_size"))}
     if config.mcp_reads is not None:
         from .mcp_client import MCPWindow  # valida a disponibilidade do cliente e SDK
 

@@ -1,4 +1,4 @@
-"""Páginas Streamlit da Etapa 7.1.1."""
+"""Navegação e páginas operacionais do laboratório local."""
 
 from http.client import HTTPException
 from pathlib import Path
@@ -23,14 +23,14 @@ from oran_lab.ui_pages import (
     initial_preset, knowledge_page, local_inventory, models_page, presets_page, reference_card, refresh_inventory,
     source_choices,
 )
-from oran_lab.ui_resources import inspect_index, save_preset
+from oran_lab.ui_resources import inspect_index, local_path, save_preset
 
 NAVIGATION = {
-    "Laboratório": (("⌂", "Visão geral"), ("⚙", "Configurar execução"), ("◫", "Monitoramento"),
-                    ("◎", "Inspeção do agente")),
-    "Pesquisa": (("◈", "Experimentos"),),
-    "Recursos": (("✦", "Modelos de IA"), ("▤", "Datasets"), ("▥", "Base de conhecimento"),
-                 ("◇", "Cenários e presets")),
+    "Laboratório": (("space_dashboard", "Visão geral"), ("tune", "Configurar execução"),
+                    ("monitoring", "Monitoramento"), ("fact_check", "Inspeção do agente")),
+    "Pesquisa": (("science", "Experimentos"),),
+    "Recursos": (("memory", "Modelos de IA"), ("database", "Datasets"), ("menu_book", "Base de conhecimento"),
+                 ("category", "Cenários e presets")),
 }
 LABELS = {
     "iniciando": "Iniciando", "preparando": "Preparando", "executando": "Em execução", "pausada": "Pausada",
@@ -46,10 +46,33 @@ STYLE = """
 <style>
 [data-testid="stAppViewContainer"] .block-container {max-width: 1420px; padding-top: 2.2rem; padding-bottom: 3rem}
 [data-testid="stSidebar"] {border-right: 1px solid #26394A}
+.st-key-lab_brand [data-testid="stMarkdownContainer"],
+.st-key-lab_navigation [data-testid="stMarkdownContainer"],
+.st-key-lab_health [data-testid="stMarkdownContainer"] {margin: 0}
+.st-key-lab_brand h2 {margin: 0; padding: 0; font-size: 1.02rem; overflow-wrap: normal}
+.st-key-lab_brand p {margin: .22rem 0 .45rem; font-size: .76rem; color: #a9bbcb}
+.st-key-lab_navigation h3 {
+  padding: .58rem .55rem .27rem; margin: 0; font-size: .69rem; text-transform: uppercase;
+  letter-spacing: .11em; color: #adbed0;
+}
+.st-key-lab_navigation button {
+  justify-content: flex-start; text-align: left; min-height: 2.2rem; padding: .26rem .55rem;
+  border: 0; border-radius: .45rem; color: #d2deea; background: transparent;
+}
+.st-key-lab_navigation button > div {justify-content: flex-start}
+.st-key-lab_navigation button:hover {background: #20384a; color: #f1f8fd}
+.st-key-lab_navigation button[data-testid="stBaseButton-primary"] {background: #17423f; color: #a2f4e6}
+.st-key-lab_navigation button:focus-visible {outline: 2px solid #69e9d4; outline-offset: 1px}
+.st-key-lab_health {border-top: 1px solid #31465a; padding: .6rem .55rem 0}
+.st-key-lab_health p {margin: 0 0 .19rem; font-size: .74rem}
 [data-testid="stAppDeployButton"] {display: none}
 [data-testid="stMetric"] {border: 1px solid #2B4558; background: #122232; border-radius: 12px; padding: 13px 16px}
 [data-testid="stMetricLabel"] {color: #BFD0DD}
 h1,h2,h3 {letter-spacing: -0.025em}
+@media (max-width:1150px) {
+  [data-testid="stAppViewContainer"] .block-container {padding-inline: 1.6rem}
+  [data-testid="stMetricValue"] {font-size: 1.5rem}
+}
 @media (max-width:700px) {
   [data-testid="stHorizontalBlock"] {flex-wrap: wrap}
   [data-testid="stColumn"] {min-width: 180px; flex: 1 1 180px}
@@ -73,28 +96,44 @@ def source_name(manifest):
     return SOURCES.get(key, f"{kind} · {metadata.get('nome', key)}")
 
 
+@st.cache_data(show_spinner=False, ttl=30)
+def index_metadata(workspace, name, size, modified_ns):
+    return inspect_index(workspace, name)["metadados"]
+
+
+def environment_summary(workspace):
+    version, models, error = local_inventory()
+    try:
+        current = active_run(workspace) or active_experiment(workspace)
+        worker = "Em atividade" if current or worker_alive(workspace) else "Livre"
+    except ERRORS:
+        worker = "Verificando"
+    compatible = 0
+    embeddings = set(embedding_tags(models))
+    installed_embeddings = {row["tag"]: row["digest"] for row in models if row["tag"] in embeddings}
+    for name in available_indices(workspace) if installed_embeddings else ():
+        try:
+            stat = local_path(workspace, Path("data/rag") / name).stat()
+            meta = index_metadata(workspace, name, stat.st_size, stat.st_mtime_ns)
+            compatible += int(bool(installed_embeddings.get(meta["modelo"])) and
+                              installed_embeddings[meta["modelo"]] == meta["digest"])
+        except (OSError, ValueError, KeyError):
+            continue
+    return version, len(generator_tags(models)), compatible, worker, error
+
+
 def overview(workspace):
     st.title("O-RAN Agentic Lab")
     st.write("Replay de KPMs, investigação com MCP e RAG e decisão em simulador.")
     hardware_details()
     st.button("Verificar ambiente novamente", on_click=refresh_inventory)
-    version, models, error = local_inventory()
-    current = active_run(workspace) or active_experiment(workspace)
+    version, generators, compatible, worker, error = environment_summary(workspace)
     runs = list_runs(workspace)
-    compatible = 0
-    installed_embeddings = {row["tag"]: row["digest"] for row in models if row["tag"] in embedding_tags(models)}
-    for name in available_indices(workspace):
-        try:
-            meta = inspect_index(workspace, name)["metadados"]
-            compatible += int(bool(installed_embeddings.get(meta["modelo"])) and
-                              installed_embeddings[meta["modelo"]] == meta["digest"])
-        except (OSError, ValueError, KeyError):
-            continue
     a, b, c, d = st.columns(4)
     a.metric("Ollama local", version or "Indisponível")
-    b.metric("Geradores locais", len(generator_tags(models)) if version else "—")
+    b.metric("Geradores locais", generators if version else "—")
     c.metric("Índices RAG compatíveis", compatible if version else "—")
-    d.metric("Worker local", "Em atividade" if current or worker_alive(workspace) else "Livre")
+    d.metric("Worker local", worker)
     if error:
         st.caption(error)
     st.subheader("Fluxo do laboratório")
@@ -137,10 +176,10 @@ def configure(workspace):
     a, b = st.columns(2)
     architecture = a.selectbox("Arquitetura", ARCHITECTURES,
                                index=choose(ARCHITECTURES, draft.architecture if draft else "B" if preferred else "A"),
-                               format_func=lambda key: f"{key} · {ARCHITECTURES[key]}", key=f"arch-{revision}")
+                               format_func=lambda key: f"{key} · {ARCHITECTURES[key]}", key=f"draft/arch-{revision}")
     sources = source_choices(workspace)
     source = b.selectbox("Fonte dos KPMs", sources, index=choose(sources, draft.source if draft else None),
-                         format_func=sources.get, key=f"source-{revision}")
+                         format_func=sources.get, key=f"draft/source-{revision}")
     model = index = None
     ready = True
     if architecture != "A":
@@ -151,12 +190,12 @@ def configure(workspace):
         tags = generator_tags(rows[1])
         model = st.selectbox("Modelo gerador local", tags,
                              index=choose(tags, draft.agent.model if draft and draft.agent else preferred),
-                             key=f"model-{revision}")
+                             key=f"draft/model-{revision}")
         ready = bool(model)
     if architecture in "CE":
         indices = available_indices(workspace)
         index = st.selectbox("Índice RAG local", indices, index=choose(indices, draft.index if draft else "indice.json"),
-                             key=f"index-{revision}")
+                             key=f"draft/index-{revision}")
         ready &= bool(index)
         if not indices:
             st.info("Use Base de conhecimento para preparar um índice compatível.")
@@ -165,12 +204,11 @@ def configure(workspace):
         st.session_state["request_id"] = uuid4().hex
     size = 30 if source == "oficial" else 2 if source == "demonstracao" else 3
     defaults = draft or replace(initial_preset(architecture), replay=ReplayConfig(size))
-    with st.form(f"config-{source}-{architecture}-{revision}"):
-        factory = config_fields(architecture, source, model, index, defaults)
-        with st.expander("Salvar como preset"):
-            preset_name = st.text_input("Nome do preset", max_chars=100)
-            save = st.form_submit_button("Salvar configuração", disabled=not ready)
-        submitted = st.form_submit_button("Iniciar execução", type="primary", disabled=not ready)
+    factory = config_fields(architecture, source, model, index, defaults, key=f"draft/run/{source}/{architecture}/{revision}")
+    with st.expander("Salvar como preset"):
+        preset_name = st.text_input("Nome do preset", max_chars=100, key="draft/preset-name")
+        save = st.button("Salvar configuração", disabled=not ready)
+    submitted = st.button("Iniciar execução", type="primary", disabled=not ready)
     if save or submitted:
         try:
             config = factory()
@@ -222,7 +260,7 @@ def chart(points, field, reference, threshold=None, *, revision):
 
 @st.fragment(run_every="1s")
 def live_monitor(workspace):
-    directory, manifest = choose_run(workspace, "monitor_run")
+    directory, manifest = choose_run(workspace, "draft/monitor_run")
     if directory is None:
         return
     active = active_run(workspace) == manifest["id"]
@@ -334,7 +372,7 @@ def text_response(audit):
 
 @st.fragment(run_every="1s")
 def inspect_run(workspace):
-    directory, manifest = choose_run(workspace, "inspect_run")
+    directory, manifest = choose_run(workspace, "draft/inspect_run")
     if directory is None:
         return
     st.caption(source_name(manifest))
@@ -344,7 +382,7 @@ def inspect_run(workspace):
         return
     windows = sorted(finished, reverse=True)
     preferred = next((n for n in windows if (finished[n]["agente"] or {}).get("contexto") is not None), windows[0])
-    number = st.selectbox("Janela concluída", windows, index=windows.index(preferred), key=f"janela-{directory.name}")
+    number = st.selectbox("Janela concluída", windows, index=windows.index(preferred), key=f"draft/janela-{directory.name}")
     item = finished[number]
     audit = item["agente"]
     if audit:
@@ -420,27 +458,50 @@ def inspect_run(workspace):
             b.json(entry["estado_posterior"], expanded=False)
 
 
+@st.fragment(run_every="5s")
+def sidebar_health(workspace):
+    version, generators, compatible, worker, _ = environment_summary(workspace)
+    lines = ["**Ambiente local**", f"Ollama {version or 'indisponível'} · Worker {worker.lower()}"]
+    if version:
+        lines.append(f"Geradores {generators} · Índices RAG {compatible}")
+    with st.container(key="lab_health", gap=None):
+        st.caption("  \n".join(lines))
+
+
+def sidebar(page, workspace):
+    with st.sidebar, st.container(gap="small"):
+        with st.container(key="lab_brand", gap=None):
+            st.markdown("## :material/hub: O-RAN Agentic Lab")
+            st.caption("Replay de KPMs · Simulador")
+        with st.container(key="lab_navigation", gap=None):
+            for name, entries in NAVIGATION.items():
+                st.markdown(f"### {name}")
+                for icon, target in entries:
+                    st.button(target, icon=f":material/{icon}:", type="primary" if page == target else "tertiary",
+                              key=f"nav-{target}", on_click=route, args=(target,), width="stretch")
+        sidebar_health(workspace)
+
+
 def main():
-    st.set_page_config(page_title="O-RAN Agentic Lab", layout="wide", initial_sidebar_state="expanded")
+    st.set_page_config(page_title="O-RAN Agentic Lab", page_icon=":material/hub:", layout="wide",
+                       initial_sidebar_state=250)
     st.html(STYLE)
+    # Detach draft values from Streamlit widget cleanup while another page is rendered.
+    for key in st.session_state:
+        if key.startswith("draft/"):
+            st.session_state[key] = st.session_state[key]
     workspace = Path.cwd()
     page = st.session_state.setdefault("pagina", "Visão geral")
-    with st.sidebar:
-        st.markdown("## O-RAN Agentic Lab")
-        st.caption("Replay de KPMs · Simulador")
-        for name, entries in NAVIGATION.items():
-            with st.expander(name, expanded=any(target == page for _, target in entries)):
-                for icon, target in entries:
-                    st.button(f"{icon}  {target}", type="primary" if page == target else "secondary",
-                              key=f"nav-{target}", on_click=route, args=(target,), width="stretch")
+    sidebar(page, workspace)
     pages = {"Visão geral": overview, "Configurar execução": configure, "Experimentos": experiments_page,
              "Modelos de IA": models_page, "Datasets": datasets_page, "Base de conhecimento": knowledge_page,
              "Cenários e presets": presets_page}
-    if page in pages:
-        pages[page](workspace)
-    else:
+    operational = {"Monitoramento": live_monitor, "Inspeção do agente": inspect_run}
+    if page in operational:
         st.title(page)
-        (live_monitor if page == "Monitoramento" else inspect_run)(workspace)
+        operational[page](workspace)
+    else:
+        pages[page](workspace)
 
 
 if __name__ == "__main__":

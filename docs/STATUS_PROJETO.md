@@ -55,6 +55,8 @@ Na execução #3, para o commit da Etapa 6 `b8cd69b`, Ubuntu, Windows e macOS ti
 
 Na execução #5, para o commit dos ajustes pré-bateria `b14eccc`, Ubuntu, Windows e macOS tiveram 152 testes aprovados e 2 opcionais ignorados em cada runner. [Execução #5](https://github.com/1LucasSilv/oran-agentic-lab/actions/runs/46047810873)
 
+A CI do commit `3bf9b00`, que introduziu gerenciamento de recursos e experimentos na interface, terminou com sucesso conforme informado pelo pesquisador. A matriz permanece configurada para Ubuntu, Windows e macOS. A validação do refinamento atual na matriz está pendente.
+
 ### Execuções locais no Windows
 
 No Windows foram usados Intel Core i5-1235U, 12 CPUs lógicas e 16 GiB de RAM. O Ollama 0.40.18 disponibilizou `qwen2.5:1.5b`, digest `65ec06548149b04c096a120e4a6da9d4017ea809c91734ea5631e89f96ddc57b`. Os primeiros testes sob sandbox encontraram erros de permissão no diretório temporário do pytest, nos diretórios de preparação e nos pipes. A validação prosseguiu em execuções autorizadas fora do sandbox.
@@ -104,6 +106,8 @@ A revalidação Python publicou a conclusão sob leitura concorrente. A suíte p
 Windows 11 AMD64, Python 3.13.0 e Ollama 0.40.18. A suíte padrão teve **171 testes aprovados e 2 opcionais ignorados** e o `pip check` confirmou as dependências. AppTest navegou pelas nove páginas. Fixtures verificaram a auditoria de CSV e XLSX, a imutabilidade, a identidade de modelos e índices, a trava e a execução controlada A–E com clientes simulados. As nove capturas foram gravadas localmente. A matriz desta revisão ainda aguarda execução.
 
 O experimento Python controlado concluiu uma sessão sem chat. A execução E concluiu oito janelas com quatro chamadas de chat e publicou o estado final durante a consulta concorrente. Houve um fallback que registrou o alerta e uma decisão do modelo aceita sem efeito. O plano da bateria científica preservou o hash lógico `78205810072de392475bb07445ea843bdfcc4996c67b049cb376bffbdac30498` e as 108 reservas. [Demonstrações e IDs](INTERFACE.md#etapa-712-no-windows)
+
+O refinamento acrescentou a barra lateral de 250 px com recolhimento nativo, rascunhos persistentes na sessão, tratamentos com geradores distintos e interrupção cooperativa. No Windows 11 com Python 3.13.0, a suíte padrão teve **175 aprovados e 2 opcionais ignorados** e o `pip check` passou. A verificação usou fixtures e resultados já gravados. A recomputação em memória reproduziu as 144 linhas pareadas do relatório histórico, com 90 oportunidades e 108 reservas. O Chrome verificou foco, hover e recolhimento. As capturas de 1520×1020, 1024×800 e 430×900 estão em `results/ui/capturas/refinamento-7.1.2/`.
 
 ## Limitações e pendências
 

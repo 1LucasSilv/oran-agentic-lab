@@ -2,6 +2,7 @@
 
 import csv
 import json
+from itertools import combinations
 from pathlib import Path
 from uuid import uuid4
 
@@ -10,6 +11,7 @@ import pandas as pd
 from .agent import build_context
 from .experiment import atomic_json, now, read_json, run_lock
 from .experiment_cases import LIMITS
+from .simulator import Limits
 from .rag import digest_json
 
 RUBRIC = ("fidelidade_kpm", "coerencia_operacional", "correcao_tecnica", "limitacoes",
@@ -17,6 +19,10 @@ RUBRIC = ("fidelidade_kpm", "coerencia_operacional", "correcao_tecnica", "limita
 METRICS = ("concordancia_proposta", "concordancia_final", "tempo_s", "tempo_chat_s",
            "entrada_tokens", "saida_tokens", "tempo_recuperacao_s", "concordancia_com_contexto_rag",
            "tempo_consultas_mcp_s", "entrada_embeddings_tokens", "recusa_modelo", "fallback")
+
+
+def architecture(job):
+    return job.get("tratamento", {}).get("architecture", job["configuracao"])
 
 
 def matches(proposal, expected):
@@ -104,9 +110,10 @@ def flatten(job, window, event, chats, execution):
         return sum(numbers) if numbers else None
 
     evaluated = event is not None
-    is_model = job["configuracao"] != "A"
-    is_rag = job["configuracao"] in ("C", "E")
-    is_mcp = job["configuracao"] in ("D", "E")
+    method = architecture(job)
+    is_model = method != "A"
+    is_rag = method in ("C", "E")
+    is_mcp = method in ("D", "E")
     attempted_final = any(item["tipo"] == "decisao" for item in chats)
     rag_cited = rag.get("referencias_citadas")
     has_excerpts = bool(rag.get("referencias_apresentadas"))
@@ -116,6 +123,8 @@ def flatten(job, window, event, chats, execution):
         failure_phase = "durante_execucao"
     return {
         "execucao": job["id"], "caso": job["caso"], "configuracao": job["configuracao"], "seed": job["seed"],
+        **({"repeticao": job.get("repeticao", 1), "arquitetura": method,
+            "modelo": (job["tratamento"].get("agent") or {}).get("model")} if "tratamento" in job else {}),
         "janela": window, "estado_execucao": execution["estado"], "avaliada": evaluated,
         "erro_execucao": execution.get("erro"), "fase_falha": failure_phase,
         "expectativa_acao": (expected or {}).get("acao"),
@@ -178,19 +187,24 @@ def description(frame):
 
 def paired(frame):
     rows = []
-    for base, treatment in (("A", "B"), ("A", "C"), ("A", "D"), ("A", "E"),
-                            ("B", "C"), ("B", "D"), ("B", "E"), ("C", "E"), ("D", "E")):
+    configurable = "repeticao" in frame
+    keys = ["caso", "janela", "seed", "repeticao"] if configurable else ["caso", "janela", "seed"]
+    count_key = "n_pares_janela_semente_repeticao" if configurable else "n_pares_janela_semente"
+    treatments = (combinations(sorted(frame.configuracao.unique()), 2) if configurable else
+                  (("A", "B"), ("A", "C"), ("A", "D"), ("A", "E"), ("B", "C"), ("B", "D"), ("B", "E"),
+                   ("C", "E"), ("D", "E")))
+    for base, treatment in treatments:
         for metric in ("concordancia_proposta", "concordancia_final", "tempo_chat_s", "entrada_tokens"):
-            a = frame.loc[frame.configuracao == base, ["caso", "janela", "seed", metric]]
-            b = frame.loc[frame.configuracao == treatment, ["caso", "janela", "seed", metric]]
-            pairs = a.merge(b, on=["caso", "janela", "seed"], validate="one_to_one").dropna()
+            a = frame.loc[frame.configuracao == base, [*keys, metric]]
+            b = frame.loc[frame.configuracao == treatment, [*keys, metric]]
+            pairs = a.merge(b, on=keys, validate="one_to_one").dropna()
             for case, group in pairs.groupby("caso"):
                 differences = group[f"{metric}_y"].astype(float) - group[f"{metric}_x"].astype(float)
                 rows.append({"base": base, "tratamento": treatment, "metrica": metric, "caso": case,
-                             "n_pares_janela_semente": len(group), "diferenca_media": differences.mean(),
+                             count_key: len(group), "diferenca_media": differences.mean(),
                              "diferenca_mediana": differences.median(),
                              "desvio_dos_pares": differences.std()})
-    return pd.DataFrame(rows, columns=["base", "tratamento", "metrica", "caso", "n_pares_janela_semente",
+    return pd.DataFrame(rows, columns=["base", "tratamento", "metrica", "caso", count_key,
                                        "diferenca_media", "diferenca_mediana", "desvio_dos_pares"])
 
 
@@ -284,14 +298,15 @@ def export_reviews(values, output):
             continue
         audit = event.get("agente") or {}
         candidate = audit.get("proposta_original")
-        if job["configuracao"] == "A":
+        if architecture(job) == "A":
             candidate = event["historico"][-1]["proposta"]
         if not isinstance(candidate, dict) or not {"acao", "parametros", "justificativa"} <= candidate.keys():
             continue
         blind = digest_json([run_id, job["id"], window])[:16]
         answer = {key: candidate[key] for key in ("acao", "parametros", "justificativa")}
         state = event["estado_anterior"]
-        context = build_context(event["detector"], state, LIMITS)
+        limits = Limits(**job["tratamento"]["limits"]) if "tratamento" in job else LIMITS
+        context = build_context(event["detector"], state, limits)
         actions = {name: context["acoes"][name] for name in context["acoes_com_alvo_disponivel"]}
         reviews.append({"id": blind, "caso": job["caso"], "janela": window,
                         "evidencias": json.dumps(event["detector"], ensure_ascii=False),
