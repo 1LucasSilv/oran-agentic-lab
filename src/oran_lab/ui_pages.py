@@ -22,7 +22,7 @@ from oran_lab.rag import Embedder, model_tag
 from oran_lab.replay import ReplayConfig
 from oran_lab.simulator import Limits, NO_ACTION, REGISTER_ALERT
 from oran_lab.ui_experiments import (
-    Comparison, experiment_path, interruption_requested, list_experiments, plan_comparison, request_interruption,
+    Comparison, experiment_path, interruption_requested, plan_comparison, request_interruption,
     start_comparison,
 )
 from oran_lab.ui_resources import (
@@ -31,7 +31,9 @@ from oran_lab.ui_resources import (
     import_preset, local_path,
     synthetic_frame, upload_frames,
 )
-from oran_lab.ui_runs import ARCHITECTURES, SOURCES, RunConfig, TERMINAL, active_experiment, available_indices, status
+from oran_lab.ui_history import open_record, select_record
+from oran_lab.ui_records import Recording, clean_name, plan_for, save_identity, session_label, stored
+from oran_lab.ui_runs import ARCHITECTURES, SOURCES, RunConfig, TERMINAL, available_indices
 
 ERRORS = (ValueError, OSError, ImportError, HTTPException, InvalidFileException, KeyError, TypeError)
 
@@ -447,19 +449,16 @@ def presets_page(workspace):
 
 @st.fragment(run_every="2s")
 def experiment_status(workspace):
-    with st.spinner("Consultando registros locais", show_time=False):
-        active_experiment(workspace)
-        records = {item["id"]: item for item in list_experiments(workspace)}
-    identifier = st.selectbox("Experimento registrado", records, index=0 if records else None,
-                              format_func=lambda k: f"{k[:12]} · {records[k]['inicio_utc'][:19]} UTC", key="draft/experiment_status")
-    if identifier:
-        directory = experiment_path(workspace, identifier)
-        snapshot = status(directory)
+    record = select_record(workspace, "experiment_status", kinds=("Configurável",), label="Experimento registrado")
+    if record:
+        identifier, directory = record.key, record.folder
+        snapshot = stored(directory, "status.json", {})
+        st.button("Abrir na Central de execução", on_click=open_record, args=("Central de execução", record))
         a, b, c = st.columns(3)
-        a.metric("Estado", snapshot["estado"])
+        a.metric("Estado", record.state_label)
         b.metric("Sessões concluídas", snapshot.get("concluidas", 0))
         c.metric("Chamadas reservadas", sum(1 for _ in directory.glob("execucoes/*/chat/*-inicio.json")))
-        if snapshot["estado"] not in TERMINAL:
+        if snapshot and snapshot.get("estado") not in TERMINAL:
             pending = interruption_requested(directory)
             if st.button("Interromper experimento", disabled=pending):
                 try:
@@ -482,13 +481,15 @@ def experiment_status(workspace):
         if completed_files:
             st.caption(f"{len(completed_files)} resultados brutos gravados")
             with st.expander("Sessões já registradas"):
+                jobs = {job["id"]: job for job in plan_for(record)["execucoes"]}
                 summaries = [(file.parent.name, read_json(file)) for file in sorted(completed_files)]
-                st.dataframe([{"Sessão": job, "Estado": outcome["estado"], "Erro": outcome.get("erro")}
+                st.dataframe([{"Sessão": session_label(jobs[job]) if job in jobs else job,
+                               "Estado": outcome["estado"], "Erro": outcome.get("erro")}
                               for job, outcome in summaries], hide_index=True)
-        st.code(str(directory.relative_to(workspace)))
         with st.expander("Manifesto e configuração"):
-            st.json(records[identifier], expanded=False)
-            st.json(read_json(directory / "plano.json")["configuracao"], expanded=False)
+            st.code(str(directory.relative_to(workspace)))
+            st.json(stored(directory, "manifesto.json", {}), expanded=False)
+            st.json(plan_for(record)["configuracao"], expanded=False)
 
 
 def experiments_page(workspace):
@@ -501,6 +502,8 @@ def experiments_page(workspace):
         st.rerun()
     experiment_status(workspace)
     st.subheader("Planejar comparação")
+    experiment_name = st.text_input("Nome do experimento (opcional)", max_chars=100, key="draft/experiment-name",
+                                    placeholder="Gerado a partir dos cenários e tratamentos")
     sources = source_choices(workspace)
     selected_sources = st.multiselect("Fontes validadas", sources, default=["demonstracao"], format_func=sources.get,
                                       key="draft/exp/sources")
@@ -578,9 +581,16 @@ def experiments_page(workspace):
             submitted = st.form_submit_button("Executar plano", disabled=not within_budget)
         if submitted:
             try:
+                name = clean_name(experiment_name)
                 identifier = start_comparison(plan, workspace, confirmed=confirmed,
                                               request_id=st.session_state["plano_ui_id"])
+                if name:
+                    try:
+                        save_identity(workspace, Recording(experiment_path(workspace, identifier), "Configurável", identifier), name)
+                    except (OSError, ValueError) as error:
+                        st.session_state["identity_warning"] = f"O experimento foi criado. O nome visual ficou pendente: {error}"
                 st.session_state.pop("plano_ui", None)
+                st.session_state.pop("draft/experiment-name", None)
                 st.session_state["recent_experiment"] = identifier
                 st.session_state["draft/central"] = f"Configurável/{identifier}"
                 st.session_state["pagina"] = "Central de execução"

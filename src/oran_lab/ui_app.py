@@ -13,8 +13,8 @@ from oran_lab.detector import INSUFFICIENT, NORMAL, PRB, SUSPECT, THROUGHPUT
 from oran_lab.ollama import strict_json
 from oran_lab.replay import ReplayConfig
 from oran_lab.ui_runs import (
-    ARCHITECTURES, SOURCES, TERMINAL, RunConfig, active_run, available_indices, list_runs,
-    read_events, run_path, send_command, start_run, status, worker_alive, active_experiment,
+    ARCHITECTURES, TERMINAL, RunConfig, active_run, available_indices,
+    read_events, run_path, send_command, start_run, worker_alive, active_experiment,
 )
 from oran_lab.experiment import read_json
 
@@ -25,6 +25,8 @@ from oran_lab.ui_pages import (
 )
 from oran_lab.ui_resources import inspect_index, local_path, save_preset
 from oran_lab.ui_research import central_page, presentation_page, results_page, reviews_page
+from oran_lab.ui_history import open_record, recent_history, select_record
+from oran_lab.ui_records import Recording, clean_name, recordings, save_identity, stored
 
 NAVIGATION = {
     "Laboratório": (("space_dashboard", "Visão geral"), ("tune", "Configurar execução"),
@@ -92,13 +94,6 @@ def route(page):
     st.session_state["pagina"] = page
 
 
-def source_name(manifest):
-    key = manifest["configuracao"]["source"]
-    metadata = manifest.get("recursos", {}).get("fonte", {})
-    kind = "Sintético" if metadata.get("tipo") == "sintetico" else "Importado"
-    return SOURCES.get(key, f"{kind} · {metadata.get('nome', key)}")
-
-
 @st.cache_data(show_spinner=False, ttl=30)
 def index_metadata(workspace, name, size, modified_ns):
     return inspect_index(workspace, name)["metadados"]
@@ -131,7 +126,6 @@ def overview(workspace):
     hardware_details()
     st.button("Verificar ambiente novamente", on_click=refresh_inventory)
     version, generators, compatible, worker, error = environment_summary(workspace)
-    runs = list_runs(workspace)
     a, b, c, d = st.columns(4)
     a.metric("Ollama local", version or "Indisponível")
     b.metric("Geradores locais", generators if version else "—")
@@ -149,14 +143,7 @@ def overview(workspace):
     st.subheader("Acesso rápido")
     for col, target in zip(st.columns(3), ("Configurar execução", "Experimentos", "Datasets"), strict=True):
         col.button(target, on_click=route, args=(target,), width="stretch", key=f"shortcut-{target}")
-    st.subheader("Execuções operacionais recentes")
-    if runs:
-        st.dataframe([{"ID": row["id"][:12], "Início (UTC)": row["inicio_utc"][:19],
-                       "Fonte": source_name(row), "Arquitetura": row["configuracao"]["architecture"],
-                       "Estado": LABELS.get(status(run_path(workspace, row["id"]))["estado"], "—")}
-                      for row in runs[:5]], hide_index=True, width="stretch")
-    else:
-        st.caption("Nenhuma execução operacional registrada.")
+    recent_history(workspace)
 
 
 def configure(workspace):
@@ -164,18 +151,24 @@ def configure(workspace):
     st.caption("Os parâmetros e recursos são fixados no manifesto ao iniciar.")
     old = st.session_state.get("submitted_run")
     if old:
-        st.success(f"Execução criada · {old[:8]}")
+        record = recordings(workspace, ("Operacional",))[f"Operacional/{old}"]
+        st.success(f"Execução criada · {record.title}")
+        if warning := st.session_state.pop("identity_warning", None):
+            st.warning(warning)
         monitor, new = st.columns(2)
-        monitor.button("Abrir monitoramento", on_click=route, args=("Monitoramento",), width="stretch")
+        monitor.button("Abrir monitoramento", on_click=open_record, args=("Monitoramento", record), width="stretch")
         if new.button("Preparar nova execução", width="stretch"):
             del st.session_state["submitted_run"]
             st.session_state.pop("request_id", None)
+            st.session_state.pop("draft/run-name", None)
             st.rerun()
         return
 
     draft = st.session_state.get("preset_config")
     preferred = st.session_state.get("modelo_preferido")
     revision = st.session_state.get("preset_revision", 0)
+    run_name = st.text_input("Nome da execução (opcional)", max_chars=100, key="draft/run-name",
+                             placeholder="Gerado a partir do cenário e da arquitetura")
     a, b = st.columns(2)
     architecture = a.selectbox("Arquitetura", ARCHITECTURES,
                                index=choose(ARCHITECTURES, draft.architecture if draft else "B" if preferred else "A"),
@@ -219,21 +212,22 @@ def configure(workspace):
                 row = save_preset(workspace, preset_name, config)
                 st.success(f"Preset salvo · {row['id']}")
             else:
-                st.session_state["submitted_run"] = start_run(config, workspace, request_id=st.session_state["request_id"])
+                name = clean_name(run_name)
+                identifier = start_run(config, workspace, request_id=st.session_state["request_id"])
+                st.session_state["submitted_run"] = identifier
+                if name:
+                    try:
+                        save_identity(workspace, Recording(run_path(workspace, identifier), "Operacional", identifier), name)
+                    except (OSError, ValueError) as error:
+                        st.session_state["identity_warning"] = f"A execução foi criada. O nome visual ficou pendente: {error}"
                 st.rerun()
         except ERRORS as error:
             st.error(str(error))
 
 
 def choose_run(workspace, key):
-    records = {item["id"]: item for item in list_runs(workspace)}
-    if not records:
-        st.info("Nenhuma execução registrada. Use Configurar execução para iniciar.")
-        return None, None
-    run_id = st.selectbox("Execução", records, key=key,
-                          format_func=lambda k: f"{k[:8]} · {records[k]['configuracao']['architecture']} · "
-                                                f"{source_name(records[k])}")
-    return run_path(workspace, run_id), records[run_id]
+    record = select_record(workspace, key, kinds=("Operacional",))
+    return (record, stored(record.folder, "manifesto.json")) if record else (None, None)
 
 
 def cached_events(directory):
@@ -263,15 +257,15 @@ def chart(points, field, reference, threshold=None, *, revision):
 
 @st.fragment(run_every="1s")
 def live_monitor(workspace):
-    directory, manifest = choose_run(workspace, "draft/monitor_run")
-    if directory is None:
+    record, manifest = choose_run(workspace, "monitor_run")
+    if record is None:
         return
-    active = active_run(workspace) == manifest["id"]
-    snapshot = status(directory)
+    directory = record.folder
+    active = active_run(workspace) == record.key
+    snapshot = stored(directory, "status.json", {})
     events = cached_events(directory)
-    state = snapshot["estado"]
-    st.caption(f"{source_name(manifest)} · "
-               f"{'execução operacional' if active else 'resultado gravado'} · ID {manifest['id'][:8]}")
+    state = snapshot.get("estado", "desconhecido")
+    st.caption(f"{'Execução operacional ativa' if active else 'Resultado gravado'} · {record.context}")
     if active:
         mode = read_json(directory / "controle.json")["modo"]
         controls = (("Pausar", "pausar", mode == "pausar"), ("Continuar", "continuar", mode == "continuar"),
@@ -314,10 +308,10 @@ def live_monitor(workspace):
         x, y = st.columns(2)
         with x:
             st.subheader("Throughput UL")
-            chart(points, THROUGHPUT, ref.get(THROUGHPUT), limit, revision=manifest["id"])
+            chart(points, THROUGHPUT, ref.get(THROUGHPUT), limit, revision=record.identity)
         with y:
             st.subheader("PRB UL")
-            chart(points, PRB, ref.get(PRB), revision=manifest["id"])
+            chart(points, PRB, ref.get(PRB), revision=record.identity)
     if detection:
         x, y, z, w = st.columns(4)
         x.metric("Referência UL", display(ref.get(THROUGHPUT)))
@@ -332,11 +326,11 @@ def live_monitor(workspace):
     totals = {key: sum(e["dados"]["tempo_s"] for e in scoped
                        if e["componente"] == key and "tempo_s" in e["dados"])
               for key in COMPONENTS if any(e["componente"] == key and "tempo_s" in e["dados"] for e in scoped)}
-    arch = manifest["configuracao"]["architecture"]
+    arch = manifest.get("configuracao", {}).get("architecture")
     disabled = ({"inferencia", "fallback"} if arch == "A" else set())
-    if arch not in "DE":
+    if arch and arch not in "DE":
         disabled.add("mcp")
-    if arch not in "CE":
+    if arch and arch not in "CE":
         disabled.add("rag")
     window_complete = any(item["janela"] == window for item in completed)
     components = pd.DataFrame([
@@ -375,10 +369,11 @@ def text_response(audit):
 
 @st.fragment(run_every="1s")
 def inspect_run(workspace):
-    directory, manifest = choose_run(workspace, "draft/inspect_run")
-    if directory is None:
+    record, _ = choose_run(workspace, "inspect_run")
+    if record is None:
         return
-    st.caption(source_name(manifest))
+    directory = record.folder
+    st.caption(record.context)
     finished = {e["janela"]: e["dados"] for e in cached_events(directory) if e["componente"] == "janela"}
     if not finished:
         st.info("A inspeção estará disponível após a primeira janela concluída.")

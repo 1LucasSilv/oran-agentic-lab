@@ -117,6 +117,10 @@ Windows 11 AMD64 com Python 3.13.0. A suíte padrão teve **179 testes aprovados
 
 O experimento Python `89941cc9baab4a32b45f42f0093307f2` concluiu uma sessão em ciclo completo com oito janelas, 82 eventos e zero chamadas de chat. A execução operacional E `6a0903d843de48b18b700d996a1a3723` foi reproduzida no navegador até a janela 6, com retrocesso confirmado à decisão da janela 5. A interface abriu as 89 respostas anonimizadas da bateria de referência. Notas e importações de teste usaram fixtures. O plano de referência preservou seu hash lógico e as 108 reservas. As capturas ficam em `results/ui/capturas/etapa7.1.3/`.
 
+O histórico agora usa início registrado para ordenação e exibe o horário local. A personalização visual fica em arquivos separados e conserva a associação legada das avaliações. A Visão geral oferece pesquisa, filtros e atalhos por execução. [Uso do histórico](INTERFACE.md#configurar-e-acompanhar)
+
+No refinamento do histórico, a suíte local no Windows teve **184 testes aprovados e dois opcionais ignorados**. O `pip check` passou. As capturas em `results/ui/capturas/historico-7.1.3/` usam execuções gravadas. A validação utilizou fixtures para criação e edição de nomes e conferiu a leitura de pontuações após renomear um registro. O plano de referência continua com o mesmo hash e 108 reservas.
+
 ## Limitações e pendências
 
 - As integrações opcionais com Ollama e MCP stdio têm evidência local no Windows para a Etapa 5.1. A execução do GitHub Actions cobre a suíte padrão.

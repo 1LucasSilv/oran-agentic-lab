@@ -13,11 +13,15 @@ import pandas as pd
 
 from .experiment import read_json, run_lock
 from .experiment_report import RUBRIC, architecture, flatten, import_reviews, read_experiment
-from .ui_runs import ID, local_path, read_snapshot
+from .ui_runs import ARCHITECTURES, ID, SOURCES, local_path, manifest_order, read_snapshot, recorded_time, publish
 from .ui_resources import label
 
 SAFE_SESSION = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,159}")
 REVIEW_FILES = ("avaliacao-cega.csv", "avaliacao-referencias.json", "chave-avaliacao-local.json")
+STATE_LABELS = {"iniciando": "Iniciando", "preparando": "Preparando", "executando": "Em execução",
+                "pausada": "Pausada", "concluida": "Concluída", "interrompida": "Interrompida",
+                "falha": "Falha", "com_falhas": "Com falhas", "parcial": "Parcial", "pendente": "Pendente"}
+UNRECORDED = "Sem registro"
 
 
 @dataclass(frozen=True)
@@ -25,18 +29,155 @@ class Recording:
     folder: Path
     kind: str
     key: str
+    started: datetime | None = None
+    state: str | None = None
+    sources: tuple[str, ...] = ()
+    models: tuple[str, ...] = ()
+    architectures: tuple[str, ...] = ()
+    name: str = ""
+    description: str = ""
+
+    @property
+    def identity(self):
+        return f"{self.kind}/{self.key}"
+
+    @property
+    def legacy_title(self):
+        return f"{self.kind} · {self.key}"
+
+    @property
+    def automatic_name(self):
+        noun = {"Operacional": "Execução", "Configurável": "Experimento", "Etapa 7": "Etapa 7"}[self.kind]
+        source = short_list(self.sources)
+        arch = short_list(self.architectures)
+        return " · ".join(item for item in (noun, source, arch) if item)
 
     @property
     def title(self):
-        return f"{self.kind} · {self.key}"
+        return self.name or self.automatic_name
+
+    @property
+    def local_start(self):
+        return local_time(self.started)
+
+    @property
+    def state_label(self):
+        return STATE_LABELS.get(self.state, self.state or UNRECORDED)
+
+    @property
+    def context(self):
+        return " · ".join(filter(None, (short_list(self.sources), short_list(self.models), architecture_label(self.architectures))))
+
+    @property
+    def selector_label(self):
+        details = [short_list(self.sources), short_list(self.models), architecture_label(self.architectures),
+                   self.local_start, self.state_label]
+        return " · ".join([self.title, *(item for item in details if item and item not in self.title)])
 
 
-def recordings(workspace):
+def local_time(value):
+    return value.astimezone().strftime("%d/%m/%Y %H:%M:%S") if value else None
+
+
+def short_list(values, limit=2):
+    return ", ".join(values[:limit]) + (f" +{len(values) - limit}" if len(values) > limit else "")
+
+
+def source_label(key, metadata=None):
+    metadata = metadata or {}
+    return metadata.get("nome") or SOURCES.get(key) or metadata.get("arquivo") or (key.replace("-", " ") if key else "")
+
+
+def architecture_label(codes):
+    if not codes:
+        return ""
+    label_text = ", ".join(f"{code} · {ARCHITECTURES[code]}" if code in ARCHITECTURES else code for code in codes)
+    return label_text if len(codes) <= 2 else f"{', '.join(codes)} · MCP/RAG por tratamento"
+
+
+def session_label(job, model=None, source=None, *, started=None, state=None):
+    treatment = job.get("tratamento", {})
+    arch = treatment.get("architecture", job.get("configuracao"))
+    agent = treatment.get("agent") or {}
+    model = agent.get("model") or (model if arch != "A" else None)
+    details = (source or source_label(job.get("caso")), model, architecture_label((arch,)) if arch else None,
+               f"Semente {job['seed']}" if job.get("seed") is not None else None,
+               f"Repetição {job['repeticao']}" if job.get("repeticao") is not None else None,
+               local_time(recorded_time(started)), STATE_LABELS.get(state, state) if state else None)
+    return " · ".join([*(item for item in details if item), job["id"]])
+
+
+def visual_path(workspace, record):
+    token = sha256(record.identity.encode("utf-8")).hexdigest()[:24]
+    return local_path(workspace, Path("results/ui/identificacao") / f"{token}.json")
+
+
+def clean_name(value):
+    return label(value, 100) if value.strip() else ""
+
+
+def save_identity(workspace, record, name, description=""):
+    cleaned = clean_name(name)
+    description = description.strip()
+    if len(description) > 2000 or any(not (char.isprintable() or char in "\n\r\t") for char in description):
+        raise ValueError("A descrição deve ter até 2.000 caracteres de texto.")
+    path = visual_path(workspace, record)
+    publish(path, {"identidade": record.identity, "nome": cleaned, "descricao": description})
+
+
+def historical_state(folder):
+    rows = stored(folder, "relatorios/decisoes.json", [])
+    states = {row.get("estado_execucao") for row in rows}
+    if states == {"concluida"}:
+        return "concluida"
+    if "pendente" in states or "parcial" in states:
+        return "parcial"
+    if "falha" in states:
+        return "com_falhas" if "concluida" in states else "falha"
+    return next(iter(states)) if len(states) == 1 else None
+
+
+def describe_record(workspace, entry, manifest, plan):
+    config = manifest.get("configuracao", {})
+    resources = manifest.get("recursos", {})
+    if entry.kind == "Operacional":
+        source = source_label(config.get("source"), resources.get("fonte"))
+        model = (config.get("agent") or {}).get("model") or (resources.get("gerador") or {}).get("tag")
+        architectures = (config["architecture"],) if config.get("architecture") else ()
+        models = (model,) if model else ()
+        sources = (source,) if source else ()
+    else:
+        jobs = plan.get("execucoes", [])
+        architectures = tuple(sorted({arch for job in jobs if (arch := architecture(job))}))
+        model = plan.get("inferencia", {}).get("modelo")
+        observed_models = set()
+        for job in jobs:
+            options = job.get("tratamento", {}).get("agent") or {}
+            if architecture(job) != "A" and (tag := options.get("model") or model):
+                observed_models.add(tag)
+        models = tuple(sorted(observed_models))
+        descriptors = plan.get("fontes", {})
+        sources = tuple(dict.fromkeys(source_label(key, descriptors.get(key, {}).get("origem"))
+                                      for job in jobs if (key := job.get("caso"))))
+    state = stored(entry.folder, "status.json", {}).get("estado")
+    if not state and entry.kind == "Etapa 7":
+        state = historical_state(entry.folder)
+    path = visual_path(workspace, entry)
+    visual = stored(path.parent, path.name, {})
+    if visual.get("identidade") != entry.identity:
+        visual = {}
+    return Recording(entry.folder, entry.kind, entry.key, recorded_time(manifest.get("inicio_utc")),
+                     state, sources, models, architectures, visual.get("nome", ""), visual.get("descricao", ""))
+
+
+def recordings(workspace, kinds=None):
     groups = (("Operacional", "results/ui", "*/manifesto.json"),
               ("Configurável", "results/ui/experimentos", "*/plano.json"),
               ("Etapa 7", "results/etapa7", "**/plano.json"))
-    records = {}
+    records = []
     for kind, root, pattern in groups:
+        if kinds is not None and kind not in kinds:
+            continue
         base = local_path(workspace, Path(root))
         for file in sorted(base.glob(pattern), reverse=True):
             if kind != "Etapa 7" and not ID.fullmatch(file.parent.name):
@@ -47,8 +188,11 @@ def recordings(workspace):
                 continue
             name = file.parent.relative_to(base).as_posix()
             entry = Recording(file.parent, kind, name)
-            records[f"{kind}/{name}"] = entry
-    return records
+            manifest = stored(file.parent, "manifesto.json", {})
+            plan = stored(file.parent, "plano.json", {}) if kind != "Operacional" else {}
+            records.append(describe_record(workspace, entry, manifest, plan))
+    records.sort(key=lambda entry: entry.started or manifest_order({}), reverse=True)
+    return {entry.identity: entry for entry in records}
 
 
 def stored(folder, filename, default=None):
@@ -245,7 +389,7 @@ def compare_records(first, second):
 
 def review_folder(workspace, record):
     original = record.folder / "relatorios"
-    overlay = local_path(workspace, Path("results/ui/avaliacoes") / sha256(record.title.encode()).hexdigest()[:24])
+    overlay = local_path(workspace, Path("results/ui/avaliacoes") / sha256(record.legacy_title.encode("utf-8")).hexdigest()[:24])
     return overlay, original
 
 

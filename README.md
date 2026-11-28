@@ -236,6 +236,8 @@ oran-ui
 
 Abra `http://127.0.0.1:8501`. **Laboratório** reúne as execuções operacionais. **Pesquisa** oferece planejamento, Central de execução, Resultados e Avaliação científica. **Recursos** concentra modelos, dados, índices, cenários e presets. Em **Sistema**, o Modo apresentação reproduz registros sem inferência. Use `.[ui,mcp,rag]` para incluir os modos com MCP e RAG. [Instalação, controles e armazenamento](docs/INTERFACE.md)
 
+O histórico da Visão geral oferece nomes editáveis, horários locais, filtros e atalhos para cada execução. Em execuções novas, o nome personalizado é opcional. [Nomes e histórico](docs/INTERFACE.md#configurar-e-acompanhar)
+
 | Comando | Saída padrão |
 | --- | --- |
 | `oran-eda` | `results/eda/`, com relatório Markdown e gráficos PNG |

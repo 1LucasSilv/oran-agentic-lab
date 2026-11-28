@@ -40,6 +40,12 @@ A usa Python e cenários sintéticos sem Ollama ou arquivos externos. B–E usam
 
 ## Configurar e acompanhar
 
+Use o campo opcional **Nome da execução** ou **Nome do experimento** ao configurar uma nova execução. Em branco, a interface gera o nome a partir do tipo, do cenário e das arquiteturas disponíveis. Os seletores mostram, quando registrados, a fonte, o gerador, MCP/RAG, o início em horário local e o estado. Na primeira abertura aparece a execução ativa ou a mais recente. Escolhas explícitas e atalhos mantêm a seleção pelo identificador interno.
+
+Em **Visão geral**, **Execuções recentes** reúne registros operacionais, experimentos configuráveis e execuções da Etapa 7. A seção permite pesquisar pelo nome, filtrar por intervalo de início, fonte, modelo, arquitetura, tipo e estado, e abrir Monitoramento ou Central de execução, Resultados e Modo apresentação. A ordenação usa o instante de início do manifesto. Registros sem data ficam no fim. O horário local vem do computador que executa a interface e os timestamps gravados permanecem em UTC.
+
+Em **Editar nome e descrição**, salve uma identificação visual ou deixe o nome em branco para voltar ao rótulo automático. As alterações ficam em `results/ui/identificacao/` e admitem nomes iguais. Os UUIDs, manifestos, planos e resultados mantêm sua identidade original. As avaliações conservam a chave legada e seus seletores ficam sem os nomes visuais.
+
 | Modo | Decisão | Investigações |
 | --- | --- | --- |
 | A | Python determinístico | — |

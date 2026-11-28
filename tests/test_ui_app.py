@@ -37,8 +37,10 @@ def test_navigation_configure_and_monitor_with_reruns(tmp_path, monkeypatch):
     assert not app.exception and app.title[0].value == "O-RAN Agentic Lab"
     navigate(app, "Configurar execução")
     assert not app.exception and app.title[0].value == "Configurar execução"
+    app.text_input(key="draft/run-name").set_value("Demonstração nomeada").run()
     next(b for b in app.button if b.label == "Iniciar execução").click().run()
-    assert not app.exception and app.success
+    assert not app.exception and "Demonstração nomeada" in app.success[0].value
+    assert "Demonstração nomeada" not in next(tmp_path.glob("results/ui/*/manifesto.json")).read_text(encoding="utf-8")
     app.run()
     assert len(runs) == 1
     navigate(app, "Monitoramento")
@@ -106,3 +108,46 @@ def test_new_research_pages_use_only_stored_evidence(tmp_path, monkeypatch):
     next(button for button in app.button if button.label == "Retroceder evento").click().run()
     assert not any("Decisão da janela" in heading.value for heading in app.subheader)
     assert not calls
+
+
+def test_history_routes_to_pinned_record_and_keeps_it_on_rerun(tmp_path, monkeypatch):
+    from test_ui_history import operational_record
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(ui_pages, "inventory", lambda: ("teste", []))
+    ui_pages.local_inventory.clear()
+    first = "a" * 32
+    old = "b" * 32
+    operational_record(tmp_path, first, "2026-11-28T04:00:00+00:00")
+    operational_record(tmp_path, old, "2026-11-28T03:00:00+00:00")
+    app = AppTest.from_file(str(APP), default_timeout=15).run()
+    navigate(app, "Monitoramento")
+    selected = "pick/monitor_run"
+    assert app.selectbox(key=selected).value == f"Operacional/{first}"
+    app.selectbox(key=selected).set_value(f"Operacional/{old}").run()
+    navigate(app, "Visão geral")
+    operational_record(tmp_path, "c" * 32, "2026-11-28T05:00:00+00:00")
+    navigate(app, "Monitoramento")
+    assert not app.exception and app.selectbox(key=selected).value == f"Operacional/{old}"
+    navigate(app, "Visão geral")
+    app.button(key=f"history-Operacional/{first}-Monitoramento").click().run()
+    assert app.selectbox(key=selected).value == f"Operacional/{first}"
+
+
+def test_experiment_launch_keeps_visual_name_outside_manifest(tmp_path, monkeypatch):
+    from oran_lab.ui_experiments import start_comparison
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(ui_pages, "inventory", lambda: ("teste", []))
+    monkeypatch.setattr(ui_pages, "start_comparison", lambda *args, **kw: start_comparison(*args, **kw, spawn=lambda *_: None))
+    ui_pages.local_inventory.clear()
+    app = AppTest.from_file(str(APP), default_timeout=15).run()
+    navigate(app, "Experimentos")
+    app.text_input(key="draft/experiment-name").set_value("Comparação demonstrativa").run()
+    next(button for button in app.button if button.label == "Gerar plano sem inferência").click().run()
+    next(widget for widget in app.checkbox if widget.label.startswith("Autorizo iniciar")).check()
+    next(button for button in app.button if button.label == "Executar plano").click().run()
+    assert not app.exception and app.title[0].value == "Central de execução"
+    assert any("Comparação demonstrativa" in option for option in app.selectbox(key="pick/central").options)
+    [manifest] = tmp_path.glob("results/ui/experimentos/*/manifesto.json")
+    assert "Comparação demonstrativa" not in manifest.read_text(encoding="utf-8")

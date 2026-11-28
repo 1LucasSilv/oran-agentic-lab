@@ -219,11 +219,27 @@ def current_run(workspace):
     return read_snapshot(marker)["id"] if marker.is_file() else None
 
 
+def recorded_time(value):
+    """Interpreta somente timestamps com fuso explicitamente registrado."""
+    if isinstance(value, str):
+        try:
+            stamp = datetime.fromisoformat(value)
+            if stamp.utcoffset() is not None:
+                return stamp
+        except ValueError:
+            pass
+    return None
+
+
+def manifest_order(manifest):
+    return recorded_time(manifest.get("inicio_utc")) or datetime.min.replace(tzinfo=timezone.utc)
+
+
 def list_runs(workspace):
     root = runs_root(workspace)
     manifests = [p for p in root.glob("*/manifesto.json")
-                 if ID.fullmatch(p.parent.name) and not p.parent.is_symlink()]
-    return sorted((read_json(p) for p in manifests), key=lambda record: record["inicio_utc"], reverse=True)
+                 if ID.fullmatch(p.parent.name) and not p.parent.is_symlink() and not p.is_symlink()]
+    return sorted((read_json(p) for p in manifests), key=manifest_order, reverse=True)
 
 
 class Journal:

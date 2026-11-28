@@ -21,7 +21,8 @@ from .rag import digest_json, model_tag
 from .simulator import NO_ACTION, REGISTER_ALERT, Simulator
 from .ui_resources import TAG
 from .ui_runs import (ARCHITECTURES, ID, TERMINAL, RunConfig, _active_run, active_experiment, await_lock,
-                      data_source, local_path, prepare, publish, runs_root, set_status, spawn_worker, status, worker_alive)
+                      data_source, local_path, manifest_order, prepare, publish, runs_root, set_status, spawn_worker,
+                      status, worker_alive)
 
 
 @dataclass(frozen=True)
@@ -100,7 +101,7 @@ def list_experiments(workspace):
     parent = local_path(workspace, Path("results/ui/experimentos"))
     return sorted((read_json(experiment_path(workspace, path.parent.name) / path.name)
                    for path in parent.glob("*/manifesto.json") if ID.fullmatch(path.parent.name)),
-                  key=lambda item: item["inicio_utc"], reverse=True)
+                  key=manifest_order, reverse=True)
 
 
 def window_offsets(detection):

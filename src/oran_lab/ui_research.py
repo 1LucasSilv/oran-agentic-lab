@@ -11,12 +11,14 @@ import streamlit as st
 from .detector import NORMAL, PRB, SUSPECT, THROUGHPUT
 from .experiment_report import RUBRIC
 from .ui_experiments import interruption_requested, request_interruption
+from .ui_history import open_record, select_record, selector_labels
 from .ui_records import (
     compare_records, elapsed, filter_rows, granular, next_window, plan_for, progress,
     recording_events, recordings, replay_prefix, result_rows, review_csv, review_material, review_mcp,
     reviewer_records, save_reviews, stored,
+    session_label, source_label,
 )
-from .ui_runs import TERMINAL, active_experiment
+from .ui_runs import TERMINAL
 
 MISSING = "—"
 COMPONENTS = {
@@ -48,15 +50,6 @@ METRICS = {"concordancia_proposta": "Concordância da proposta", "concordancia_f
            "tempo_recuperacao_s": "Tempo RAG (s)", "entrada_tokens": "Tokens de entrada", "saida_tokens": "Tokens de saída",
            "entrada_embeddings_tokens": "Tokens de embeddings"}
 ERRORS = (ValueError, OSError, KeyError, TypeError)
-
-
-def select_record(workspace, key, predicate=lambda _: True):
-    entries = {key: record for key, record in recordings(workspace).items() if predicate(record)}
-    if not entries:
-        st.info("Nenhum registro compatível foi encontrado.")
-        return None
-    selected = st.selectbox("Execução", entries, format_func=lambda key: entries[key].title, key=f"draft/{key}")
-    return entries[selected]
 
 
 def message(event):
@@ -222,20 +215,18 @@ def live_experiment(workspace, record):
     manifest = stored(record.folder, "manifesto.json", {})
     snapshot = stored(record.folder, "status.json", {})
     cache = st.session_state.setdefault("research_diaries", {})
-    events = cache.setdefault(record.title, [])
+    events = cache.setdefault(record.identity, [])
     events.extend(granular(record, events[-1]["seq"] if events else 0))
     totals, treatments, reserved, returned = progress(record, plan, events)
     latest = events[-1] if events else None
     sid = next((e["sessao"] for e in reversed(events) if e.get("sessao")), None)
     job = next((job for job in plan.get("execucoes", []) if job["id"] == sid), {})
     config = plan.get("configuracao", {})
-    st.write(f"`{record.key}` · {config.get('mode', MISSING).replace('_', ' ')} · {state_name(snapshot.get('estado', 'aguardando'))}")
+    st.text(f"{record.title} · {config.get('mode', MISSING).replace('_', ' ')} · {record.state_label}")
     if job:
-        agent = job["tratamento"].get("agent") or {}
         window = next((e["janela"] for e in reversed(events) if e.get("sessao") == sid and e["janela"] is not None), None)
-        st.caption(f"{job['configuracao']} · Arquitetura {job['tratamento']['architecture']} · "
-                   f"{agent.get('model', 'Python')} · {job['caso']} · {sid} · "
-                   f"Semente {job['seed']} · Repetição {job.get('repeticao', MISSING)} · Janela {window or MISSING}")
+        origin = plan.get("fontes", {}).get(job["caso"], {}).get("origem")
+        st.caption(f"{session_label(job, source=source_label(job['caso'], origin))} · Janela {window or MISSING}")
     runtime = elapsed(manifest, snapshot)
     a, b, c, d = st.columns(4)
     a.metric("Sessões concluídas", f"{totals.get('concluida', 0)} / {totals.get('planejadas', 0)}")
@@ -283,19 +274,13 @@ def live_experiment(workspace, record):
 
 def central_page(workspace):
     st.title("Central de execução")
+    if warning := st.session_state.pop("identity_warning", None):
+        st.warning(warning)
     st.caption("Acompanhamento ao vivo de experimentos configuráveis e consulta aos registros concluídos.")
-    identifier = active_experiment(workspace)
-    if identifier:
-        st.session_state.setdefault("draft/central", f"Configurável/{identifier}")
-    record = select_record(workspace, "central", lambda entry: entry.kind == "Configurável")
+    record = select_record(workspace, "central", kinds=("Configurável",))
     if record:
         live_experiment(workspace, record)
-        st.button("Consultar resultados deste experimento", on_click=go_to, args=("Resultados", "results", record))
-
-
-def go_to(page, target, record):
-    st.session_state["pagina"] = page
-    st.session_state[f"draft/{target}"] = f"{record.kind}/{record.key}"
+        st.button("Consultar resultados deste experimento", on_click=open_record, args=("Resultados", record))
 
 
 def summary_frame(frame):
@@ -373,9 +358,10 @@ def results_page(workspace):
         st.download_button("Exportar CSV filtrado", frame.to_csv(index=False).encode("utf-8-sig"), "oportunidades.csv")
         st.download_button("Exportar JSON filtrado", frame.to_json(orient="records", force_ascii=False),
                            "oportunidades.json", "application/json")
-    options = {key: record for key, record in recordings(workspace).items() if record != first}
+    options = {key: record for key, record in recordings(workspace).items() if key != first.identity}
+    labels = selector_labels(options)
     comparison = st.selectbox("Comparar com outra execução", options, index=None,
-                              format_func=lambda key: options[key].title, key="draft/compare-run")
+                              format_func=labels.get, key="draft/compare-run")
     if comparison:
         second = options[comparison]
         differences = compare_records(first, second)
@@ -388,7 +374,7 @@ def results_page(workspace):
         second_rows = result_rows(second)
         for col, record, table in ((a, first, summary), (b, second, summary_frame(pd.DataFrame(second_rows))
                                   if second_rows else pd.DataFrame())):
-            col.markdown(f"**{record.title}**")
+            col.text(record.title)
             col.dataframe(table, hide_index=True)
         st.caption("As execuções mantêm denominadores separados. O protocolo e as condições registradas delimitam as comparações controladas.")
 
@@ -396,7 +382,8 @@ def results_page(workspace):
 def reviews_page(workspace):
     st.title("Avaliação científica")
     st.caption("Revisão humana da resposta e das evidências autorizadas. Os escores são preenchidos pelo avaliador.")
-    record = select_record(workspace, "reviews", lambda entry: (entry.folder / "relatorios/avaliacao-cega.csv").is_file())
+    record = select_record(workspace, "reviews", lambda entry: (entry.folder / "relatorios/avaliacao-cega.csv").is_file(),
+                           blind=True)
     if not record:
         return
     overlay, rows, refs = review_material(workspace, record)
@@ -405,7 +392,7 @@ def reviews_page(workspace):
         return
     by_id = {row["id"]: row for row in rows}
     evaluator = st.text_input("Identificador do avaliador", max_chars=100, key="draft/evaluator").strip()
-    item = st.selectbox("Resposta anonimizada", by_id, key=f"draft/review-{record.key}")
+    item = st.selectbox("Resposta anonimizada", by_id, key=f"draft/review-{record.identity}")
     row = by_id[item]
     current = reviewer_records(workspace, record, evaluator) if evaluator else {}
     saved = current.get(item, {})
@@ -429,7 +416,7 @@ def reviews_page(workspace):
         with st.expander("Avaliação documental"):
             st.json(refs[item], expanded=False)
     st.caption("Escala da rubrica · 0 inadequado, 1 parcial, 2 adequado. Campo vazio fica sem pontuação.")
-    with st.form(f"review-{record.key}-{item}-{evaluator}"):
+    with st.form(f"review-{record.identity}-{item}-{evaluator}"):
         notes = {}
         for criterion in RUBRIC if item in refs else RUBRIC[:-2]:
             if criterion == RUBRIC[-2]:
@@ -581,18 +568,27 @@ def presentation_page(workspace):
     arch = configuration.get("architecture")
     if plan.get("execucoes"):
         cases = list(dict.fromkeys(job["caso"] for job in plan["execucoes"]))
-        case = st.selectbox("Cenário", cases, key=f"draft/pres-case-{record.key}")
+        descriptors = plan.get("fontes", {})
+        case = st.selectbox("Cenário", cases, key=f"draft/pres-case-{record.identity}",
+                            format_func=lambda key: source_label(key, descriptors.get(key, {}).get("origem")))
         jobs = {job["id"]: job for job in plan["execucoes"] if job["caso"] == case}
-        sid = st.selectbox("Sessão gravada", jobs, format_func=lambda s: f"{s} · {jobs[s]['configuracao']}",
-                           key=f"draft/pres-session-{record.key}-{case}")
+        starts = {e["sessao"]: e.get("data_utc") for e in events if e.get("sessao") and
+                  e["componente"] == "sessao" and e["estado"] == "iniciada"}
+        ends = {e["sessao"]: e["estado"] for e in events if e.get("sessao") and
+                e["componente"] == "sessao" and e["estado"] != "iniciada"}
+        session_names = {key: session_label(job, model=plan.get("inferencia", {}).get("modelo"),
+                                           source=source_label(case, descriptors.get(case, {}).get("origem")),
+                                           started=starts.get(key), state=ends.get(key)) for key, job in jobs.items()}
+        sid = st.selectbox("Sessão gravada", jobs, format_func=session_names.get,
+                           key=f"draft/pres-session-{record.identity}-{case}")
         arch = jobs[sid].get("tratamento", {}).get("architecture", jobs[sid]["configuracao"])
         events = [e for e in events if e.get("sessao") == sid]
     else:
         sid = "operacional"
-        st.caption(f"Fonte · {configuration.get('source', MISSING)} · Arquitetura {arch or MISSING}")
+        st.caption(record.context)
     expanded = st.toggle("Visualização ampliada", help="Recolha a barra lateral para ampliar a área dos gráficos.")
     if events:
-        playback(events, is_granular, arch, f"play-{record.title}-{sid}", expanded)
+        playback(events, is_granular, arch, f"play-{record.identity}-{sid}", expanded)
     else:
         st.info("A sessão selecionada ainda não possui eventos gravados.")
     with st.expander("Conceitos da demonstração"):
