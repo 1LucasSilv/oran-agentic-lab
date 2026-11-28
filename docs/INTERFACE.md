@@ -7,10 +7,14 @@
 | Laboratório | Monitoramento | Acompanha o replay por janela e controla o worker. |
 | Laboratório | Inspeção do agente | Consulta evidência, proposta, ferramentas, referências e efeito no simulador. |
 | Pesquisa | Experimentos | Planeja comparações, confirma o teto de chat e acompanha sessões. |
+| Pesquisa | Central de execução | Acompanha janelas, sessões, orçamento, componentes e interrupção. |
+| Pesquisa | Resultados | Filtra oportunidades e compara indicadores e metadados de execuções. |
+| Pesquisa | Avaliação científica | Revisa respostas anonimizadas e guarda lotes de notas humanas. |
 | Recursos | Modelos de IA | Consulta tags locais, capacidades, digests, quantização, disco e residência. |
 | Recursos | Datasets | Verifica o Excel oficial e audita CSV ou XLSX importados. |
 | Recursos | Base de conhecimento | Verifica documentos e índices e permite indexação e busca de teste. |
 | Recursos | Cenários e presets | Edita séries sintéticas e gerencia configurações reutilizáveis. |
+| Sistema | Modo apresentação | Reproduz eventos gravados em ordem e destaca evidências e efeitos simulados. |
 
 ## Instalação e abertura
 
@@ -94,6 +98,18 @@ flowchart LR
 Cada execução tem um diretório `results/ui/<id>/` com manifesto de configuração, revisão, versões, hashes e digests. O worker grava eventos numerados, estado, pedidos de controle e log. Conclusão e interrupção segura produzem `resultados.json` e `relatorio.md`. Uma falha preserva os eventos e, quando há janelas concluídas, `parcial.json`. O worker não reenvia inferências de uma execução encerrada. Uma trava de processo limita a uma execução operacional ativa, e a chave da submissão torna reruns idempotentes. Abrir a interface novamente permite acompanhar o mesmo worker. Alterações na configuração criam uma nova execução.
 
 Comparações configuráveis ficam em `results/ui/experimentos/<id>/`. As fontes e presets em `data/ui/` e as saídas em `results/` são locais e ignorados pelo Git. Uma trava de processo coordena operações da interface que alteram modelos, constroem índices ou usam recursos de execução. Controle por ferramentas externas ao laboratório fica fora dessa trava. O worker verifica novamente a identidade antes de usar os recursos. A Etapa 7.1.3 cobre reprodução visual de eventos gravados, comparação de resultados, avaliação científica e modo de apresentação. O [protocolo congelado](EXPERIMENTOS.md) permanece em `results/etapa7/`.
+
+## Acompanhar, reproduzir e avaliar
+
+A confirmação de uma bateria configurável abre a **Central de execução**. As barras de sessões, oportunidades e reservas de chat usam denominadores próprios. Chat com retorno conta um arquivo de término, inclusive respostas com erro. O console mostra horários UTC, tempos relativos quando disponíveis, filtros e os detalhes JSON. A ação **Interromper cooperativamente** conserva a janela em curso e para antes da próxima fronteira operacional. Chamadas HTTP em curso podem precisar terminar.
+
+O diário adicional `diario/<seq>.json` dos novos experimentos grava `seq`, `data_utc`, `experimento`, `sessao`, `janela`, `componente`, `estado` e `dados`. Sessão ou janela ficam nulas quando o evento tem escopo maior. A ordem vem da sequência monotônica do worker. Detector e simulador continuam preparando o estado e calculando o prefixo autorizado. O diário publica amostras somente quando a janela é liberada. A preparação pode abranger o cálculo das detecções. O evento da janela registra a publicação do resultado do detector.
+
+Em **Modo apresentação**, selecione a execução e, para experimentos, o cenário e a sessão. Use iniciar, pausar, continuar, reiniciar, avançar ou retroceder por evento, avançar por janela ou saltar para uma posição. A velocidade regula a frequência dos eventos exibidos. Gráficos, diagrama e auditoria usam o prefixo revelado. Registros antigos podem ter somente decisões por janela e encerramentos. Quando faltam amostras, horários ou eventos de componentes, esses detalhes ficam indisponíveis. Recuperação indica um retorno observado na série. Alertas e efeitos verificados pertencem ao simulador.
+
+**Resultados** lê os registros originais e filtra modelo, arquitetura, tratamento, cenário, semente e repetição. Indicadores de propostas do modelo e efeitos do fallback ficam separados. Comparações entre execuções mostram o que se sabe sobre fontes, prompts, parâmetros, hardware, digests e protocolo. Os recortes de cada execução são exibidos com denominadores próprios e podem ser exportados em CSV ou JSON.
+
+**Avaliação científica** usa IDs opacos e exportações cegas. O avaliador escolhe um identificador, abre a proposta e as evidências autorizadas, e salva as notas disponíveis. As evidências MCP e os critérios documentais têm seções próprias. Notas e comentários revisados exigem confirmação. Importação, lotes e consolidação ficam em `results/ui/avaliacoes/<hash>/`. Relatórios científicos e operacionais continuam nos diretórios originais. [Rubrica e medidas](EXPERIMENTOS.md#medidas-e-revisão-humana)
 
 ## Demonstrações locais
 

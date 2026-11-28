@@ -234,7 +234,7 @@ python -m pip install -e ".[ui]"
 oran-ui
 ```
 
-Abra `http://127.0.0.1:8501`. O menu reúne **Laboratório** para configurar, monitorar e inspecionar execuções, **Pesquisa** para planejar comparações e **Recursos** para gerenciar o Ollama, os datasets, a base documental, os cenários e os presets. Use `.[ui,mcp,rag]` para incluir os modos com MCP e RAG. [Instalação, controles e armazenamento](docs/INTERFACE.md)
+Abra `http://127.0.0.1:8501`. **Laboratório** reúne as execuções operacionais. **Pesquisa** oferece planejamento, Central de execução, Resultados e Avaliação científica. **Recursos** concentra modelos, dados, índices, cenários e presets. Em **Sistema**, o Modo apresentação reproduz registros sem inferência. Use `.[ui,mcp,rag]` para incluir os modos com MCP e RAG. [Instalação, controles e armazenamento](docs/INTERFACE.md)
 
 | Comando | Saída padrão |
 | --- | --- |
@@ -252,4 +252,4 @@ O replay e o loop escrevem `resultados.json` e `relatorio.md`. Use `--saida` par
 
 Na execução oficial de referência no Linux, o detector produziu 38 janelas sobre 1.138 registros KPM e zero alertas. O cenário sintético permitiu verificar ações e recusas do simulador. Os experimentos com Ollama e MCP demonstraram propostas, consultas e fallback. Esses resultados descrevem os casos executados. Novas medições dependem do modelo, do runtime e do hardware. [Replay](docs/REPLAY_DETECCAO.md) · [Simulador](docs/ACAO_SIMULADA.md) · [Agente Ollama](docs/AGENTE_OLLAMA.md) · [MCP](docs/MCP.md)
 
-As Etapas 0 a 6 estão aprovadas, incluindo a preparação reproduzível da Etapa 5.1. A bateria controlada da Etapa 7 concluiu 90 sessões, com avaliação humana pendente. A Etapa 7.1.2 acrescenta gerenciamento de recursos e comparações configuráveis à interface. Reprodução visual de eventos, comparação de resultados, avaliação científica e modo de apresentação pertencem à Etapa 7.1.3. [Resultados da Etapa 7](docs/EXPERIMENTOS.md#bateria-controlada-final) · [Plano técnico](docs/PLANO_LABORATORIO.md) · [Status](docs/STATUS_PROJETO.md) · [Auditoria da planilha](docs/EDA.md) · [Instalação avançada](docs/INSTALACAO.md)
+As Etapas 0 a 6 estão aprovadas, incluindo a preparação reproduzível da Etapa 5.1. A bateria controlada da Etapa 7 concluiu 90 sessões, com avaliação humana pendente. A Etapa 7.1.3 acrescenta acompanhamento experimental, reprodução de registros, comparação de resultados e interface para avaliação humana. [Resultados da Etapa 7](docs/EXPERIMENTOS.md#bateria-controlada-final) · [Plano técnico](docs/PLANO_LABORATORIO.md) · [Status](docs/STATUS_PROJETO.md) · [Auditoria da planilha](docs/EDA.md) · [Instalação avançada](docs/INSTALACAO.md)

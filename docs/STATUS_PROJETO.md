@@ -22,7 +22,7 @@ Atualizado em 27 de novembro de 2026.
 | 7 | Bateria controlada final executada e consolidada. Avaliação humana pendente. |
 | 7.1.1 | Aprovada funcionalmente. Matriz GitHub do commit `2c9acaa` aprovada, conforme registro informado pelo pesquisador. |
 | 7.1.2 | Gerenciamento de recursos, experimentos e navegação implementados e validados localmente no Windows. |
-| 7.1.3 | Resultados, avaliação científica e modo de apresentação. Aguarda autorização. |
+| 7.1.3 | Central de execução, resultados, avaliação científica e modo apresentação implementados. |
 
 ## Implementação e decisões
 
@@ -55,7 +55,9 @@ Na execução #3, para o commit da Etapa 6 `b8cd69b`, Ubuntu, Windows e macOS ti
 
 Na execução #5, para o commit dos ajustes pré-bateria `b14eccc`, Ubuntu, Windows e macOS tiveram 152 testes aprovados e 2 opcionais ignorados em cada runner. [Execução #5](https://github.com/1LucasSilv/oran-agentic-lab/actions/runs/46047810873)
 
-A CI do commit `3bf9b00`, que introduziu gerenciamento de recursos e experimentos na interface, terminou com sucesso conforme informado pelo pesquisador. A matriz permanece configurada para Ubuntu, Windows e macOS. A validação do refinamento atual na matriz está pendente.
+A CI do commit `3bf9b00`, que introduziu gerenciamento de recursos e experimentos na interface, terminou com sucesso conforme informado pelo pesquisador. A matriz permanece configurada para Ubuntu, Windows e macOS.
+
+A CI do commit `0a15770`, com o refinamento da Etapa 7.1.2, terminou com sucesso conforme informado pelo pesquisador. A matriz da Etapa 7.1.3 aguarda execução.
 
 ### Execuções locais no Windows
 
@@ -109,10 +111,17 @@ O experimento Python controlado concluiu uma sessão sem chat. A execução E co
 
 O refinamento acrescentou a barra lateral de 250 px com recolhimento nativo, rascunhos persistentes na sessão, tratamentos com geradores distintos e interrupção cooperativa. No Windows 11 com Python 3.13.0, a suíte padrão teve **175 aprovados e 2 opcionais ignorados** e o `pip check` passou. A verificação usou fixtures e resultados já gravados. A recomputação em memória reproduziu as 144 linhas pareadas do relatório histórico, com 90 oportunidades e 108 reservas. O Chrome verificou foco, hover e recolhimento. As capturas de 1520×1020, 1024×800 e 430×900 estão em `results/ui/capturas/refinamento-7.1.2/`.
 
+### Etapa 7.1.3 no Windows
+
+Windows 11 AMD64 com Python 3.13.0. A suíte padrão teve **179 testes aprovados e dois opcionais ignorados**. O `pip check` passou. AppTest conferiu a renderização e a navegação. Os testes verificaram equivalência de decisões e chamadas com e sem diário, prefixo causal, reservas durante processamento, leitura de registros antigos e importação de avaliações parciais.
+
+O experimento Python `89941cc9baab4a32b45f42f0093307f2` concluiu uma sessão em ciclo completo com oito janelas, 82 eventos e zero chamadas de chat. A execução operacional E `6a0903d843de48b18b700d996a1a3723` foi reproduzida no navegador até a janela 6, com retrocesso confirmado à decisão da janela 5. A interface abriu as 89 respostas anonimizadas da bateria de referência. Notas e importações de teste usaram fixtures. O plano de referência preservou seu hash lógico e as 108 reservas. As capturas ficam em `results/ui/capturas/etapa7.1.3/`.
+
 ## Limitações e pendências
 
 - As integrações opcionais com Ollama e MCP stdio têm evidência local no Windows para a Etapa 5.1. A execução do GitHub Actions cobre a suíte padrão.
 - O detector sinaliza padrões heurísticos. A planilha carece de rótulos de falha e de denominador para interpretar PRB como percentual. A semântica temporal de `Latency` segue indeterminada.
 - Os efeitos verificados pertencem ao simulador. O desenho controlado usa seis cenários sintéticos e repetições técnicas. Tempos de inferência dependem de runtime, modelo, cache e hardware.
 - A avaliação humana das 89 respostas exportadas permanece pendente.
-- Reprodução visual dos eventos gravados, comparação de resultados, avaliação científica e modo de apresentação aguardam autorização da Etapa 7.1.3. [Plano técnico](PLANO_LABORATORIO.md#etapa-71--requisitos-da-interface-web-local)
+- Arquivos antigos só exibem os eventos, métricas e horários que registraram. Comparações entre execuções com protocolos ou recursos distintos são descritivas.
+- Diagnóstico e validação pela interface aguardam autorização da Etapa 8. [Plano técnico](PLANO_LABORATORIO.md#etapa-71--requisitos-da-interface-web-local)

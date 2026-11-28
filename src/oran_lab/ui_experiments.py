@@ -1,15 +1,19 @@
 """Comparações configuráveis em espaço próprio, com o núcleo experimental da Etapa 7."""
 
 from dataclasses import asdict, dataclass, replace
+import json
 from itertools import islice
 from pathlib import Path
+import platform
 from random import Random
 import sys
 from time import perf_counter
 from uuid import uuid4
 
-from .agent import AgentSession
-from .detector import detect
+from .agent import AgentSession, EXPERIMENT_PROMPT
+from .detector import PRB, THROUGHPUT, detect
+from .events import stage
+from .hardware import physical_memory, processor_name
 from .experiment import ChatLedger, LoggedClient, code_identity, dependency_versions, load_average, now, read_json, run_lock
 from .experiment_report import aggregate
 from .loop import propose
@@ -146,6 +150,7 @@ def plan_comparison(config, workspace, *, source_loader=data_source):
                                  "tratamento": asdict(treatment(config, source, method, seed, budget, model))})
     Random(42).shuffle(jobs)
     plan = {"versao": 2, "codigo": code_identity(), "configuracao": asdict(config), "fontes": sources,
+            "prompt_sha256": digest_json(EXPERIMENT_PROMPT),
             "tratamentos": {key: {"arquitetura": method, "modelo": model} for key, method, model in entries},
             "execucoes": jobs, "n_sessoes": len(jobs), "n_oportunidades": sum(len(job["janelas"]) for job in jobs),
             "max_chat": sum(job["max_chat"] for job in jobs), "ordem_seed": 42}
@@ -211,6 +216,8 @@ def start_comparison(plan, workspace, *, confirmed=False, request_id=None, spawn
         publish(directory / "plano.json", plan)
         publish(directory / "manifesto.json", {"id": identifier, "plano_sha256": plan["sha256"], "inicio_utc": now(),
                                                "versoes": dependency_versions(), "recursos": resources,
+                                               "hardware": {"sistema": platform.platform(), "cpu": processor_name(),
+                                                            "ram_bytes": physical_memory()},
                                                "tratamentos": treatments})
         set_status(directory, "iniciando", concluidas=0, falhas=0, total=plan["n_sessoes"], chat=0)
         publish(root / "experimento-atual.json", {"id": identifier})
@@ -242,20 +249,27 @@ def request_interruption(workspace, identifier):
             publish(directory / "interrupcao.json", {"data_utc": now()})
 
 
-def execute_session(job, workspace, plan, resources, folder, ledger, prepare_run, should_stop):
-    config = RunConfig.from_dict(job["tratamento"])
-    frame, source, observed, client, rag = prepare_run(config, workspace)
-    if observed != resources:
-        raise ValueError("Os recursos mudaram desde a pré-verificação.")
+def execute_session(job, workspace, plan, resources, folder, ledger, prepare_run, should_stop, on_event=None):
+    def session_event(component, state, payload):
+        on_event(job, None, component, state, payload)
+
+    emit_session = session_event if on_event else None
+    with stage(emit_session, "dataset") as outcome:
+        config = RunConfig.from_dict(job["tratamento"])
+        frame, source, observed, client, rag = prepare_run(config, workspace)
+        if observed != resources:
+            raise ValueError("Os recursos mudaram desde a pré-verificação.")
+        outcome.update(fonte=job["caso"], tipo=source.get("tipo"))
     windows = job["janelas"]
-    detections = collect_detections(frame, config, windows[-1])
-    if digest_json(detections) != plan["fontes"][job["caso"]]["evidencia_sha256"]:
-        raise ValueError("A evidência planejada mudou.")
-    frame = frame.iloc[:window_offsets(detections[-1])]
-    simulator = prepare_target(frame, detections, config, windows[0])
-    initial = simulator.state()
-    if initial != plan["fontes"][job["caso"]]["estado_inicial"]:
-        raise ValueError("O estado inicial preparado diverge do plano.")
+    with stage(emit_session, "preparacao"):
+        detections = collect_detections(frame, config, windows[-1])
+        if digest_json(detections) != plan["fontes"][job["caso"]]["evidencia_sha256"]:
+            raise ValueError("A evidência planejada mudou.")
+        frame = frame.iloc[:window_offsets(detections[-1])]
+        simulator = prepare_target(frame, detections, config, windows[0])
+        initial = simulator.state()
+        if initial != plan["fontes"][job["caso"]]["estado_inicial"]:
+            raise ValueError("O estado inicial preparado diverge do plano.")
     agent = AgentSession(config.agent, LoggedClient(client, ledger, folder), rag, experiment=True) if client else None
     publish(folder / "eventos/preparacao.json", {"estado_inicial": initial, "historico": simulator.history(),
                                                "residencia": agent.client.residency() if agent else None})
@@ -268,28 +282,45 @@ def execute_session(job, workspace, plan, resources, folder, ledger, prepare_run
         detection = catalog[number]
         before = simulator.state()
         offset = len(simulator.history())
+        def window_event(component, state, payload):
+            on_event(job, number, component, state, payload)
+
+        emit = window_event if on_event else None
+        end = window_offsets(detection)
+        if emit:
+            with stage(emit, "replay") as replay:
+                first = detection["janela"]["primeira_linha_excel"] - 2
+                points = frame.iloc[first:end].reindex(columns=["Register", THROUGHPUT, PRB])
+                replay.update(janela=detection["janela"], pontos=json.loads(points.to_json(orient="records")))
+            emit("detector", "concluida", {"deteccao": detection})
+        simulator.emit = emit
         mcp = None
         if config.mcp_reads:
             from .mcp_client import MCPWindow
 
             visible = {key: value for key, value in catalog.items() if key <= number}
-            mcp = MCPWindow(simulator, frame.iloc[:window_offsets(detection)], visible, number,
-                            config.mcp_reads, config.mcp_timeout)
+            mcp = MCPWindow(simulator, frame.iloc[:end], visible, number, config.mcp_reads, config.mcp_timeout, emit=emit)
         if agent:
+            agent.emit = emit
             agent.decide(detection, simulator, propose, mcp)
         else:
-            simulator.apply(propose(detection), origin="politica_deterministica", window_id=number)
-        publish(folder / "eventos" / f"janela-{number:04d}.json",
-                {"janela": number, "detector": detection, "estado_anterior": before, "estado_posterior": simulator.state(),
+            proposal = propose(detection)
+            if emit:
+                emit("proposta", "concluida", {"proposta": proposal, "origem": "politica_deterministica"})
+            simulator.apply(proposal, origin="politica_deterministica", window_id=number)
+        record = {"janela": number, "detector": detection, "estado_anterior": before, "estado_posterior": simulator.state(),
                  "historico": simulator.history()[offset:], "agente": agent.decisions[-1] if agent else None,
-                 "expectativa": expectation(source, number), "tempo_s": perf_counter() - start})
+                 "expectativa": expectation(source, number), "tempo_s": perf_counter() - start}
+        publish(folder / "eventos" / f"janela-{number:04d}.json", record)
+        if emit:
+            emit("janela", "concluida", record)
         completed += 1
     return {"estado": "concluida" if completed == len(windows) else "interrompida",
             "janelas_concluidas": completed, "residencia_final": agent.client.residency() if agent else None,
             "carga": load_average()}
 
 
-def run_worker(workspace, identifier, *, prepare_run=prepare, report=aggregate):
+def run_worker(workspace, identifier, *, prepare_run=prepare, report=aggregate, instrument=True):
     directory = experiment_path(workspace, identifier)
     root = runs_root(workspace)
     with run_lock(root / "worker"):
@@ -301,7 +332,20 @@ def run_worker(workspace, identifier, *, prepare_run=prepare, report=aggregate):
                 return
             set_status(directory, "preparando")
         progress = {}
+        sequence = 0
+
+        def emit(job, window, component, state, payload):
+            nonlocal sequence
+            if not instrument:
+                return
+            sequence += 1
+            publish(directory / "diario" / f"{sequence:09d}.json",
+                    {"seq": sequence, "data_utc": now(), "experimento": identifier,
+                     "sessao": job["id"] if job else None, "janela": window, "componente": component,
+                     "estado": state, "dados": payload})
+
         try:
+            emit(None, None, "experimento", "iniciada", {})
             plan = read_json(directory / "plano.json")
             manifest = read_json(directory / "manifesto.json")
             config = Comparison.from_dict(plan["configuracao"])
@@ -321,12 +365,14 @@ def run_worker(workspace, identifier, *, prepare_run=prepare, report=aggregate):
                     state = "interrompida"
                     break
                 folder = directory / "execucoes" / job["id"]
+                emit(job, None, "sessao", "iniciada", {})
                 try:
                     result = execute_session(job, workspace, plan, manifest["recursos"][f"{job['caso']}/{job['configuracao']}"],
-                                             folder, ledger, prepare_run, should_stop)
+                                             folder, ledger, prepare_run, should_stop, emit if instrument else None)
                 except Exception as error:
                     result = {"estado": "falha", "fase_falha": "durante_execucao", "erro": f"{type(error).__name__}: {error}"}
                 publish(folder / "resultado.json", result)
+                emit(job, None, "sessao", result["estado"], result)
                 progress["chat"] = ledger.used
                 if result["estado"] == "interrompida":
                     progress["interrompidas"] += 1
@@ -335,8 +381,10 @@ def run_worker(workspace, identifier, *, prepare_run=prepare, report=aggregate):
                 progress["concluidas" if result["estado"] == "concluida" else "falhas"] += 1
                 set_status(directory, "executando", **progress)
             report(directory)
+            emit(None, None, "experimento", state, progress.copy())
             set_status(directory, state, **progress)
         except Exception as error:
+            emit(None, None, "experimento", "falha", {"erro": str(error)})
             set_status(directory, "falha", erro=f"{type(error).__name__}: {error}", **progress)
 
 

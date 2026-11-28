@@ -172,3 +172,11 @@ Nos cenários personalizados, as expectativas de registrar alerta ou de nenhuma 
 O relatório configurável pareia por **caso, janela, semente e repetição**. Assim, duas repetições da mesma semente geram dois pares quando ambas as medidas existem. São repetições técnicas da mesma janela. Os relatórios históricos da Etapa 7 conservam seu esquema e os pares definidos no protocolo publicado.
 
 O comando de interrupção da interface é cooperativo. Depois de gravar a janela em curso, o worker deixa as demais oportunidades pendentes e agrega os registros presentes. Os arquivos de reserva e de retorno permanecem no diretório da sessão.
+
+### Consulta e revisão pela interface
+
+A Central de execução lê o diário novo em ordem de sequência e usa os arquivos históricos de janela, sessão e chat para calcular progresso. O Modo apresentação lê esses mesmos registros e revela um prefixo por vez. Nenhum dos dois refaz decisões ao ler eventos.
+
+Resultados reaproveita a normalização de oportunidades de `experiment_report.py`. Os contrastes da bateria de referência pertencem ao seu protocolo controlado. Compare execuções separadas descritivamente, com seus denominadores e condições de coleta. Uma dimensão sem metadados fica indeterminada. Células sem medida permanecem vazias.
+
+A página Avaliação científica salva lotes independentes por avaliador em `results/ui/avaliacoes/<hash>/`. A interface retoma notas parciais e reaproveita o importador e o consolidador existentes. Itens idênticos ficam no lote original. Revisões confirmadas geram outro lote e mantêm os anteriores. A leitura documental pode revelar a configuração e é apresentada em seção própria. [Fluxo da interface](INTERFACE.md#acompanhar-reproduzir-e-avaliar)

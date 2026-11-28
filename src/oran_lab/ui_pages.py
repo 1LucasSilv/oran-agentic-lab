@@ -494,6 +494,11 @@ def experiment_status(workspace):
 def experiments_page(workspace):
     st.title("Experimentos")
     st.caption("Plano configurável com manifesto próprio. A bateria científica da Etapa 7 fica em results/etapa7.")
+    identifier = st.session_state.get("recent_experiment")
+    if identifier and st.button("Abrir central da última submissão"):
+        st.session_state["draft/central"] = f"Configurável/{identifier}"
+        st.session_state["pagina"] = "Central de execução"
+        st.rerun()
     experiment_status(workspace)
     st.subheader("Planejar comparação")
     sources = source_choices(workspace)
@@ -576,6 +581,9 @@ def experiments_page(workspace):
                 identifier = start_comparison(plan, workspace, confirmed=confirmed,
                                               request_id=st.session_state["plano_ui_id"])
                 st.session_state.pop("plano_ui", None)
-                st.success(f"Experimento registrado · {identifier}")
+                st.session_state["recent_experiment"] = identifier
+                st.session_state["draft/central"] = f"Configurável/{identifier}"
+                st.session_state["pagina"] = "Central de execução"
+                st.rerun()
             except ERRORS as exc:
                 st.error(str(exc))

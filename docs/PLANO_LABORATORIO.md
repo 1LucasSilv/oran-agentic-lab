@@ -145,7 +145,7 @@ Ação inicial recomendada: **ampliar a janela de análise** após alerta persis
 | **7. Comparação** | Protocolo A–E, decisão controlada e ciclo completo, piloto, auditoria e revisão humana | Casos congelados, orçamento auditável, piloto e plano final documentados | `feat: adiciona avaliacao experimental reproduzivel` |
 | **7.1.1. Interface base, configuração e monitoramento** | Streamlit e Plotly em loopback, com worker local e inspeção do agente | Configuração imutável, controles por janela e eventos de execução local verificáveis | `feat: adiciona interface operacional local` |
 | **7.1.2. Gerenciamento de recursos e experimentos** | Catálogos locais, auditoria de fontes, cenários, presets e comparações configuráveis | Confirmação, teto de chat e trava compartilhada. Novas execuções preservam os protocolos e manifestos existentes | `feat: gerencia recursos e experimentos na interface local` |
-| **7.1.3. Resultados, avaliação científica e modo de apresentação** | Consultar resultados, avaliação e apresentação | Relatórios e avaliações humanas identificados por execução | A definir após autorização |
+| **7.1.3. Central de execução, resultados, avaliação científica e apresentação** | Acompanhar experimentos e reproduzir registros com console e diagrama | Progresso com denominadores explícitos, prefixo causal, comparação descritiva e avaliações humanas separadas | `feat: adiciona central experimental e revisão científica na interface` |
 | **8. Consolidação** | Relatório curto, gráficos, documentação e instruções de reprodução | Terceiro consegue reproduzir o fluxo com dados disponíveis | `docs: consolida resultados do laboratorio` |
 
 ### Marco de entrega prioritário (MVP)
@@ -182,7 +182,7 @@ O protocolo avalia propostas originais e decisões finais em modo controlado e e
 - Oferecer modos de apresentação, exploração e avaliação científica.
 - Preservar identificadores de execução, manifestos e configurações científicas. Novos experimentos terão suas próprias configurações e manifestos. O protocolo da bateria controlada atual permanece preservado.
 
-A Etapa 7.1.1 cobre configuração operacional, monitoramento e inspeção. A Etapa 7.1.2 acrescenta navegação agrupada, importação de fontes com hash e auditoria, catálogo de modelos e índices, cenários e presets versionados e experimentos configuráveis. O refinamento mantém os grupos visíveis na barra lateral de 250 px e usa recolhimento nativo. O worker compartilha uma trava com operações de recursos da interface. Os novos experimentos registram variáveis comuns, identidade dos geradores por tratamento e orçamento em diretório próprio. A agregação pareia por caso, janela, semente e repetição. A interrupção cooperativa preserva os registros parciais. A reprodução visual de eventos gravados, comparação de resultados, avaliação e apresentação pertencem à Etapa 7.1.3 e aguardam autorização. [Guia da interface](INTERFACE.md)
+A Etapa 7.1.1 cobre configuração operacional, monitoramento e inspeção. A Etapa 7.1.2 acrescenta navegação agrupada, importação auditada, recursos locais, cenários, presets e experimentos configuráveis. A Etapa 7.1.3 acrescenta a Central de execução e um diário de eventos, reprodução com prefixo causal, Resultados com comparação descritiva e Avaliação científica com lotes independentes. A barra lateral usa largura inicial de 250 px e recolhimento nativo. A página Diagnóstico e validação, incluindo execução controlada de Pytest pela interface, pertence à Etapa 8. [Guia da interface](INTERFACE.md)
 
 ## 8. Ferramentas, dependências e recursos
 

@@ -70,7 +70,7 @@ def test_navigation_keeps_drafts_and_selected_page(tmp_path, monkeypatch):
     monkeypatch.setattr(ui_pages, "inventory", lambda: ("teste", []))
     ui_pages.local_inventory.clear()
     app = AppTest.from_file(str(APP), default_timeout=15).run()
-    assert len(app.sidebar.button) == 9 and not app.sidebar.expander
+    assert len(app.sidebar.button) == 13 and not app.sidebar.expander
     navigate(app, "Configurar execução")
     size = "draft/run/demonstracao/A/0/size"
     app.number_input(key=size).set_value(4).run()
@@ -83,3 +83,26 @@ def test_navigation_keeps_drafts_and_selected_page(tmp_path, monkeypatch):
     assert app.number_input(key="draft/exp/repetitions").value == 2
     assert app.button(key="nav-Experimentos").proto.type == "primary"
     assert not app.exception
+
+
+def test_new_research_pages_use_only_stored_evidence(tmp_path, monkeypatch):
+    from oran_lab.ui_experiments import Comparison, plan_comparison, run_worker, start_comparison
+
+    monkeypatch.chdir(tmp_path)
+    plan = plan_comparison(Comparison(ui_runs.RunConfig(), ("demonstracao",), ("A",), (42,), target=5), tmp_path)
+    identifier = start_comparison(plan, tmp_path, confirmed=True, spawn=lambda *_: None)
+    run_worker(tmp_path, identifier)
+    calls = []
+    monkeypatch.setattr(ui_pages, "inventory", lambda: (calls.append("inventory") or ("teste", [])))
+    ui_pages.local_inventory.clear()
+    app = AppTest.from_file(str(APP), default_timeout=20).run()
+    calls.clear()
+    for page in ("Central de execução", "Resultados", "Avaliação científica", "Modo apresentação"):
+        navigate(app, page)
+        assert not app.exception and app.title[0].value == page
+    assert not any("Decisão da janela" in heading.value for heading in app.subheader)
+    next(button for button in app.button if button.label == "Avançar janela").click().run()
+    assert not app.exception and any(heading.value == "Decisão da janela 5" for heading in app.subheader)
+    next(button for button in app.button if button.label == "Retroceder evento").click().run()
+    assert not any("Decisão da janela" in heading.value for heading in app.subheader)
+    assert not calls

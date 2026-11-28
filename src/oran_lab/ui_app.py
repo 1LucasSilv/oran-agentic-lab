@@ -24,13 +24,16 @@ from oran_lab.ui_pages import (
     source_choices,
 )
 from oran_lab.ui_resources import inspect_index, local_path, save_preset
+from oran_lab.ui_research import central_page, presentation_page, results_page, reviews_page
 
 NAVIGATION = {
     "Laboratório": (("space_dashboard", "Visão geral"), ("tune", "Configurar execução"),
                     ("monitoring", "Monitoramento"), ("fact_check", "Inspeção do agente")),
-    "Pesquisa": (("science", "Experimentos"),),
+    "Pesquisa": (("science", "Experimentos"), ("play_circle", "Central de execução"),
+                 ("bar_chart", "Resultados"), ("rate_review", "Avaliação científica")),
     "Recursos": (("memory", "Modelos de IA"), ("database", "Datasets"), ("menu_book", "Base de conhecimento"),
                  ("category", "Cenários e presets")),
+    "Sistema": (("slideshow", "Modo apresentação"),),
 }
 LABELS = {
     "iniciando": "Iniciando", "preparando": "Preparando", "executando": "Em execução", "pausada": "Pausada",
@@ -458,14 +461,24 @@ def inspect_run(workspace):
             b.json(entry["estado_posterior"], expanded=False)
 
 
-@st.fragment(run_every="5s")
-def sidebar_health(workspace):
-    version, generators, compatible, worker, _ = environment_summary(workspace)
-    lines = ["**Ambiente local**", f"Ollama {version or 'indisponível'} · Worker {worker.lower()}"]
-    if version:
-        lines.append(f"Geradores {generators} · Índices RAG {compatible}")
+def render_health(summary, heading):
+    lines = [f"**{heading}**"]
+    if summary:
+        version, generators, compatible, worker, _ = summary
+        lines.append(f"Ollama {version or 'indisponível'} · Worker {worker.lower()}")
+        if version:
+            lines.append(f"Geradores {generators} · Índices RAG {compatible}")
+    else:
+        lines.append("Consulta de registros locais")
     with st.container(key="lab_health", gap=None):
         st.caption("  \n".join(lines))
+
+
+@st.fragment(run_every="5s")
+def sidebar_health(workspace):
+    summary = environment_summary(workspace)
+    st.session_state["sidebar_environment"] = summary
+    render_health(summary, "Ambiente local")
 
 
 def sidebar(page, workspace):
@@ -479,7 +492,10 @@ def sidebar(page, workspace):
                 for icon, target in entries:
                     st.button(target, icon=f":material/{icon}:", type="primary" if page == target else "tertiary",
                               key=f"nav-{target}", on_click=route, args=(target,), width="stretch")
-        sidebar_health(workspace)
+        if page in ("Central de execução", "Resultados", "Avaliação científica", "Modo apresentação"):
+            render_health(st.session_state.get("sidebar_environment"), "Última verificação")
+        else:
+            sidebar_health(workspace)
 
 
 def main():
@@ -495,7 +511,8 @@ def main():
     sidebar(page, workspace)
     pages = {"Visão geral": overview, "Configurar execução": configure, "Experimentos": experiments_page,
              "Modelos de IA": models_page, "Datasets": datasets_page, "Base de conhecimento": knowledge_page,
-             "Cenários e presets": presets_page}
+             "Cenários e presets": presets_page, "Central de execução": central_page, "Resultados": results_page,
+             "Avaliação científica": reviews_page, "Modo apresentação": presentation_page}
     operational = {"Monitoramento": live_monitor, "Inspeção do agente": inspect_run}
     if page in operational:
         st.title(page)

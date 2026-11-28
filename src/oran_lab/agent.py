@@ -271,18 +271,26 @@ class AgentSession:
                         remaining = config.max_calls - self.calls
                         if self.experiment:
                             remaining = min(remaining, 2)
-                        audit["contexto_final"] = mcp.consult(
-                            lambda schema, prompt, query: self._consult_model(schema, prompt, query, audit),
-                            context, remaining,
-                        )
+                        with stage(self.emit, "selecao") as selection:
+                            audit["contexto_final"] = mcp.consult(
+                                lambda schema, prompt, query: self._consult_model(schema, prompt, query, audit),
+                                context, remaining,
+                            )
+                            selection["chamadas"] = len(audit.get("inferencias_consulta", ()))
+                            if not selection["chamadas"]:
+                                selection["estado"] = "dispensada"
                     except (OSError, HTTPException, ValueError, RecursionError) as error:
                         if not self.experiment:
                             raise
                         audit["erro_consulta_mcp"] = str(error)
                 proposal = self._propose(detection, audit.get("contexto_final", context), audit)
                 audit["proposta_modelo"] = proposal
+                if self.emit:
+                    self.emit("proposta", "concluida", {"proposta": proposal, "origem": "ollama"})
             except (OSError, HTTPException, ValueError, RecursionError) as error:
                 audit["erro"] = f"{type(error).__name__}: {error}"
+                if self.emit:
+                    self.emit("proposta", "falha", {"erro": audit["erro"]})
             else:
                 try:
                     entry = (mcp.apply(proposal, "ollama") if mcp
@@ -301,9 +309,13 @@ class AgentSession:
                 self.consecutive = 0
         if entry is None:
             proposal = baseline(detection)
+            if skip and self.emit:
+                self.emit("inferencia", "dispensada", {"motivo": skip})
             if audit["erro"] or skip == "circuito_aberto":
                 origin = "fallback_python"
                 audit["fallback"] = proposal
+            elif self.emit:
+                self.emit("proposta", "concluida", {"proposta": proposal, "origem": origin})
             with stage(self.emit if audit["fallback"] else None, "fallback", motivo=audit["erro"] or skip) as outcome:
                 try:
                     entry = (mcp.apply(proposal, origin) if mcp
